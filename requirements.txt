@@ -1,0 +1,7 @@
+alembic==1.16.5
+greenlet==3.2.4
+Mako==1.3.10
+MarkupSafe==3.0.2
+SQLAlchemy==2.0.43
+-e git+https://github.com/Sentinel-Hive/hive-server@c184e7d0a2e95f3047f162759a7deceb5d679d7a#egg=svh
+typing_extensions==4.15.0

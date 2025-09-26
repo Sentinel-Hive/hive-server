@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Alembic
+migrations/versions/*.pyc
+migrations/versions/__pycache__/
+
+# SQLite DB files (optional if using SQLite for dev)
+*.sqlite3
+
+# Rope Project file
+.ropeproject
