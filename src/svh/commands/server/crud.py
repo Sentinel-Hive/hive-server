@@ -3,6 +3,7 @@ import os
 import signal
 from pathlib import Path
 from svh import notify
+from svh.commands.server.helper import invalid_config
 
 PID_FILE = Path(".svh_server.pid")
 DEFAULT_HOST = "127.0.0.1"
@@ -17,12 +18,22 @@ def start_server(config: dict):
 
     if not host:
         notify.error(f"No host specified in configuration: [host: {host}]")
-        notify.server(f"Defaulting to port:{DEFAULT_HOST}")
-        host = DEFAULT_HOST
+        useDefault = invalid_config("host")
+        if useDefault:
+            notify.server(f"Defaulting to `{DEFAULT_HOST}`")
+            host = DEFAULT_HOST
+        else:
+            notify.error("Cannot start server because no host was specified.")
+            exit(1)
     if not port:
         notify.error(f"No port specified in configuration: [port: {port}]")
-        notify.server(f"Defaulting to port:{DEFAULT_PORT}")
-        port = DEFAULT_PORT
+        useDefault = invalid_config("port")
+        if useDefault:
+            notify.server(f"Defaulting to `{DEFAULT_PORT}`")
+            port = DEFAULT_PORT
+        else:
+            notify.error("Cannot start server because no port was specified.")
+            exit(1)
 
     cmd = [
         "uvicorn",
