@@ -8,8 +8,8 @@ PID_FILE = Path(".svh_server.pid")
 
 
 def start_server(config: dict):
-    host = config.get("server", {}).get("host", "0.0.0.0")
-    port = config.get("server", {}).get("port", 8000)
+    host = config.get("server", {}).get("host")
+    port = config.get("server", {}).get("port")
 
     cmd = [
         "uvicorn",
@@ -34,19 +34,20 @@ def start_server(config: dict):
 
     except Exception as e:
         notify.error(f"Failed to start server: {e}")
-        raise
+        exit(1)
 
 
 def stop_server():
     if not PID_FILE.exists():
-        return False, "No running server found."
+        notify.error("No running server found.")
+        exit(1)
 
     pid = int(PID_FILE.read_text())
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
-        return False, f"No process found with PID {pid}."
+        notify.error("No process found with PID {pid}.")
     finally:
         PID_FILE.unlink(missing_ok=True)
 
-    return True, f"Stopped server with PID {pid}"
+    notify.server(f"Stopped server with PID {pid}.")

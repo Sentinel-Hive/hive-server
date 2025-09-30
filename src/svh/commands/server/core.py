@@ -44,11 +44,7 @@ def start(
 
 @app.command(help="Stop the server.")
 def stop():
-    ok, msg = crud.stop_server()
-    if ok:
-        notify.server(msg)
-    else:
-        notify.error(msg)
+    crud.stop_server()
 
 
 @app.command(help="Delete current server instance.")
