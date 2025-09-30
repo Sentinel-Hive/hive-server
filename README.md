@@ -46,8 +46,9 @@ pytest
 * `svh/cli.py` — CLI entrypoint
 * `svh/commands/` — CLI subcommands
 * `svh/db.py` — Database layer
-* `svh/server.py` — API server
-
+* `svh/server` — API Server Logic
+* `svh/server/client_api` — Client API Endpoints
+* `svh/server/db_api` — Database API Endpoints
 ---
 
 ## Commands
