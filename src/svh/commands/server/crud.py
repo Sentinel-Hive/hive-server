@@ -59,9 +59,7 @@ def _start_service(config: dict, service: str, app_path: str):
             text=True,
         )
         pid_file.write_text(str(process.pid))
-        notify.server(
-            f"{service.capitalize()} API started on {host}:{port} (PID {process.pid})"
-        )
+        notify.server(f"{service} API started on {host}:{port} (PID {process.pid})")
     except Exception as e:
         notify.error(f"Failed to start {service} API: {e}")
         exit(1)
