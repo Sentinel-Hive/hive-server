@@ -35,8 +35,8 @@ def start(
 
 @app.command(help="Stop both the Client and DB API servers.")
 def stop():
-    cfg = state.load_config_state()
     try:
+        cfg = state.load_config_state()
         crud.stop_client_server(cfg)
         crud.stop_db_server(cfg)
     except FileNotFoundError:

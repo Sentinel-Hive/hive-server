@@ -104,7 +104,7 @@ def _stop_service(config: dict, service: str):
     pid_file = PID_FILES[service]
     if not pid_file.exists():
         notify.error(f"No running {service} API found.")
-        exit(1)
+        return
 
     pid = int(pid_file.read_text())
     host, port = _resolve_config(config, service)
