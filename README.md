@@ -67,8 +67,18 @@ python -m svh.cli <OPTIONS> [COMMAND] [ARGS]
 
 ### API Server
 
+To run both the Client and Db API Servers, use the command:
 ```bash
-# TODO
+svh server start
+```
+
+However, you can also run each individually, and stop each individually with:
+```bash
+svh server start-client
+svh server stop-client
+# OR
+svh server start-db
+svh server stop-db
 ```
 
 ### Database
