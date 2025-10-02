@@ -21,10 +21,13 @@ def open_port(port: int, proto: str = "tcp"):
         notify.error(f"Firewall handling not implemented for {os_name}")
         exit(1)
 
-    subprocess.run(
-        cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
-    )
-    notify.firewall(f"{port}:{proto.upper()} opened to allow traffic to service.")
+    try:
+        subprocess.run(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+        )
+        notify.firewall(f"{port}:{proto.upper()} opened to allow traffic to service.")
+    except subprocess.CalledProcessError as e:
+        notify.error(f"Failed to open port {port}:{proto.upper()}. Error: {e}")
 
 
 def close_port(port: int, proto: str = "tcp"):
@@ -44,7 +47,10 @@ def close_port(port: int, proto: str = "tcp"):
         notify.error(f"Firewall handling not implemented for {os_name}")
         exit(1)
 
-    subprocess.run(
-        cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
-    )
-    notify.firewall(f"{port}:{proto.upper()} closed.")
+    try:
+        subprocess.run(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+        )
+        notify.firewall(f"{port}:{proto.upper()} closed.")
+    except subprocess.CalledProcessError as e:
+        notify.error(f"Failed to close port {port}:{proto.upper()}. Error: {e}")
