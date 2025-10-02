@@ -123,3 +123,13 @@ def stop_client_server():
 
 def stop_db_server():
     _stop_service("db")
+
+
+def list_servers():
+    for service in PID_FILES:
+        pid_file = PID_FILES[service]
+        if Path(pid_file).exists():
+            pid = Path(pid_file).read_text().strip().lstrip("\"'").rstrip("\"'")
+            notify.info(f"{service} found and running with pid {pid}.")
+        else:
+            notify.info(f"{service} not found or is not running.")

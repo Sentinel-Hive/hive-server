@@ -1,5 +1,5 @@
 server:
-  host: "127.0.0.1"
+  host: "localhost"
   client_port: 8000
   db_port: 8001
 

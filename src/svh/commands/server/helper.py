@@ -1,5 +1,9 @@
 import ipaddress
+import typer
 import re
+from pathlib import Path
+import yaml
+from svh import notify
 
 
 def isHost(value: str) -> bool:
@@ -10,7 +14,7 @@ def isHost(value: str) -> bool:
         pass
 
     domain_pattern = re.compile(r"^(?!-)(?:[a-zA-Z0-9-]{1,63}\.)+[a-zA-Z]{2,63}$")
-    if domain_pattern.match(value):
+    if domain_pattern.match(value) or value == "localhost":
         return True
 
     return False
@@ -24,3 +28,16 @@ def invalid_config(field) -> bool:
         return True
     else:
         return False
+
+
+def load_config(config_path: Path) -> dict:
+    if not config_path.exists() or not config_path.is_file():
+        notify.error(f"Config not found or is not a file: {config_path}")
+        raise typer.Exit(code=1)
+
+    try:
+        with open(config_path, "r") as f:
+            return yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        notify.error(f"Invalid YAML in config: {e}")
+        raise typer.Exit(code=1)
