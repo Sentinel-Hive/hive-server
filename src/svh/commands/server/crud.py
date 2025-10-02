@@ -3,6 +3,7 @@ import os
 import signal
 from pathlib import Path
 from svh import notify
+from svh.commands.server import firewall
 from svh.commands.server.helper import invalid_config, isHost
 
 PID_FILES = {
@@ -71,12 +72,10 @@ def _start_service(config: dict, service: str, app_path: str):
         "critical",
     ]
 
-    for x in PID_FILES:
-        pid_file = Path(PID_FILES[service])
-        if pid_file.exists():
-            pid = pid_file.read_text().strip()
-            notify.error(f"{service} API service is already running with pid:`{pid}`")
-            return
+    if pid_file.exists():
+        pid = pid_file.read_text().strip()
+        notify.error(f"{service} API service is already running with pid:`{pid}`")
+        return
 
     try:
         process = subprocess.Popen(
@@ -87,6 +86,7 @@ def _start_service(config: dict, service: str, app_path: str):
         )
         pid_file.write_text(str(process.pid))
         notify.server(f"{service} API started on {host}:{port} (PID {process.pid})")
+        firewall.open_port(port, "tcp")
     except Exception as e:
         notify.error(f"Failed to start {service} API: {e}")
         exit(1)
@@ -100,29 +100,34 @@ def start_db_server(config: dict):
     _start_service(config, "db", "svh.commands.server.db_api.main:app")
 
 
-def _stop_service(service: str):
+def _stop_service(config: dict, service: str):
     pid_file = PID_FILES[service]
     if not pid_file.exists():
         notify.error(f"No running {service} API found.")
         exit(1)
 
     pid = int(pid_file.read_text())
+    host, port = _resolve_config(config, service)
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         notify.error(f"No process found with PID {pid}.")
     finally:
         pid_file.unlink(missing_ok=True)
+        try:
+            firewall.close_port(port, "tcp")
+        except Exception as e:
+            notify.error(f"Failed to close firewall port {port}: {e}")
 
     notify.server(f"Stopped {service} API with PID {pid}.")
 
 
-def stop_client_server():
-    _stop_service("client")
+def stop_client_server(config: dict):
+    _stop_service(config, "client")
 
 
-def stop_db_server():
-    _stop_service("db")
+def stop_db_server(config: dict):
+    _stop_service(config, "db")
 
 
 def list_servers():
