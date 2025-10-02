@@ -6,7 +6,7 @@ from svh import notify
 from svh.commands.server.helper import invalid_config, isHost
 
 PID_FILES = {
-    "client": Path(".svh_user_api.pid"),
+    "client": Path(".svh_client_api.pid"),
     "db": Path(".svh_db_api.pid"),
 }
 DEFAULT_HOST = "127.0.0.1"
@@ -70,6 +70,13 @@ def _start_service(config: dict, service: str, app_path: str):
         "--log-level",
         "critical",
     ]
+
+    for x in PID_FILES:
+        pid_file = Path(PID_FILES[service])
+        if pid_file.exists():
+            pid = pid_file.read_text().strip()
+            notify.error(f"{service} API service is already running with pid:`{pid}`")
+            return
 
     try:
         process = subprocess.Popen(
