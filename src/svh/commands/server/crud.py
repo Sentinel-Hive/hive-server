@@ -3,7 +3,7 @@ import os
 import signal
 from pathlib import Path
 from svh import notify
-from svh.commands.server.helper import invalid_config
+from svh.commands.server.helper import invalid_config, isHost
 
 PID_FILES = {
     "client": Path(".svh_user_api.pid"),
@@ -16,21 +16,36 @@ DEFAULT_DB_PORT = 5169
 
 def _resolve_config(config: dict, service: str):
     server_cfg = config.get("server", {})
-    host = server_cfg.get("host")
+    host = server_cfg.get("host").strip().lstrip("\"'").rstrip("\"'")
     if not host:
         notify.error(f"No host specified in configuration: [host: {host}]")
         useDefault = invalid_config("host")
         if useDefault:
-            notify.server(f"Defaulting to `{DEFAULT_HOST}`")
+            notify.server(f"Defaulting to host:`{DEFAULT_HOST}`")
             host = DEFAULT_HOST
         else:
             notify.error("Cannot start server because no host was specified.")
             exit(1)
 
+    if not isHost(host):
+        notify.error(f"Host ({host}) is invalid. Please ensure you use a valid host.")
+        host = DEFAULT_HOST
+        notify.server(f"Defaulting to host:`{DEFAULT_HOST}`")
+
     if service == "client":
-        port = server_cfg.get("client_port", DEFAULT_CLIENT_PORT)
+        port = server_cfg.get("client_port")
+        if port == None:
+            notify.error(
+                f"No CLIENT port specified in configuration. [client_port: {port}]"
+            )
+            port = DEFAULT_CLIENT_PORT
+            notify.server(f"Defaulting to client_port:`{port}`")
     else:
-        port = server_cfg.get("db_port", DEFAULT_DB_PORT)
+        port = server_cfg.get("db_port")
+        if port == None:
+            notify.error(f"No DB port specified in configuration. [db_port: {port}]")
+            port = DEFAULT_DB_PORT
+            notify.server(f"Defaulting to db_port:`{port}`")
 
     return host, port
 
@@ -38,6 +53,11 @@ def _resolve_config(config: dict, service: str):
 def _start_service(config: dict, service: str, app_path: str):
     pid_file = PID_FILES[service]
     host, port = _resolve_config(config, service)
+
+    if host == None or port == None:
+        raise ValueError(
+            f"Unexpected values found in `host: {host}, port: {port}` definitions."
+        )
 
     cmd = [
         "uvicorn",
