@@ -1,8 +1,7 @@
 import typer
-from svh.commands.server import core, firewall
+from svh.commands.server import main
 
 app = typer.Typer(help="Server management commands")
 
 # Attach sub-groups
-app.add_typer(core.app, name="core")
-app.add_typer(firewall.app, name="firewall")
+app.add_typer(main.app, name="main")
