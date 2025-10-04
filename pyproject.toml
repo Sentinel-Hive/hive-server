@@ -15,6 +15,7 @@ dependencies = [
     "alembic",
     "fastapi",
     "uvicorn",
+    "pyyaml",
 ]
 
 [project.scripts]

@@ -1,73 +1,84 @@
 # Hive-Server (`svh` CLI)
 
 **Hive-Server** is a Python-based CLI and API for database management.
-The CLI follows the format:
 
-```
-svh <OPTIONS> [COMMAND]
-```
+This documentation is meant to serve as a "quick-start"! To get a better understanding, please visit the **Hive-Server wiki**!.
 
 ---
 
-## DEV
+## Installation
+*Install files/scripts coming soon!*
 
-### Setup
+## Installation (Dev)
 
+### Linux / macOS Installation
+
+**1. Clone repository**
 ```bash
 git clone https://github.com/yourusername/hive-server.git
 cd hive-server
+```
+
+**2. Create and activate virtual environment**
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-### Install
-
-Option A: Global CLI inside your environment
-
+**3. Install in editable (dev) mode**
 ```bash
 pip install --editable .
 ```
 
-Option B: Local only
+### Windows (PowerShell)
 
+**1. Clone repository**
 ```bash
-pip install -r requirements.txt
-# or pip install . with pip>=23.1
+git clone https://github.com/yourusername/hive-server.git
+cd hive-server
 ```
 
-### Run Tests
-
+**2. Create virtual environment**
 ```bash
-pytest
+python -m venv .venv
 ```
 
-### Project Structure
+**3. Activate virtual environment**
+```bash
+.\.venv\Scripts\Activate.ps1
+```
 
-* `svh/cli.py` — CLI entrypoint
-* `svh/commands/` — CLI subcommands
-* `svh/db.py` — Database layer
-* `svh/server.py` — API server
+**4. Install in editable (dev) mode**
+```bash
+pip install --editable .
+```
 
 ---
 
 ## Commands
-
-### CLI
-
+Commands generally follow the structure below.
 ```bash
 svh <OPTIONS> [COMMAND] [ARGS]
 ```
 
-If not installed globally:
-
+If CLI tool is not installed globally, they then follow this format:
 ```bash
 python -m svh.cli <OPTIONS> [COMMAND] [ARGS]
 ```
 
 ### API Server
-
+To run both the Client and Db API Servers, use the command:
 ```bash
-# TODO
+svh server start
+```
+
+However, you can also run each individually, and stop each individually with:
+```bash
+svh server start-client
+svh server stop-client
+# OR
+svh server start-db
+svh server stop-db
 ```
 
 ### Database
