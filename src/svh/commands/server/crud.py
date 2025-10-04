@@ -56,9 +56,13 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
     host, port = _resolve_config(config, service)
 
     if pid_file.exists():
-        pid = pid_file.read_text().strip()
-        notify.error(f"{service} API service is already running with pid:`{pid}`")
-        return
+        try:
+            pid = int(pid_file.read_text())
+            os.kill(pid, 0)
+            notify.error(f"{service} API service is already running with pid:{pid}")
+            return
+        except ProcessLookupError:
+            pid_file.unlink()
 
     log_file = None
     if detach:
@@ -67,6 +71,8 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
         notify.server(f"Logging {service} output to {log_path.resolve()}")
 
     cmd = [
+        "python",
+        "-m",
         "uvicorn",
         app_path,
         "--host",
@@ -81,14 +87,22 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
     try:
         process = subprocess.Popen(
             cmd,
-            stdout=log_file if detach else subprocess.PIPE,
-            stderr=log_file if detach else subprocess.PIPE,
+            stdout=log_file if detach else None,
+            stderr=log_file if detach else None,
             text=True,
             start_new_session=True,
         )
         pid_file.write_text(str(process.pid))
         notify.server(f"{service} API started on {host}:{port} (PID {process.pid})")
-        firewall.open_port(port, "tcp")
+        try:
+            firewall.open_port(port, "tcp")
+        except Exception as e:
+            notify.error(f"Failed to open firewall port {port}: {e}")
+    except FileNotFoundError:
+        notify.error(
+            "Python or uvicorn not found. Make sure uvicorn is installed and in PATH."
+        )
+        exit(1)
     except Exception as e:
         notify.error(f"Failed to start {service} API: {e}")
         exit(1)
