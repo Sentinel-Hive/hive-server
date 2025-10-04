@@ -74,11 +74,11 @@ svh server start
 
 However, you can also run each individually, and stop each individually with:
 ```bash
-svh server start-client
-svh server stop-client
+svh server start -s client
+svh server stop -s client
 # OR
-svh server start-db
-svh server stop-db
+svh server start -s db
+svh server stop -s db
 ```
 
 ### Database
