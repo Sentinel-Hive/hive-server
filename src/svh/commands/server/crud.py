@@ -66,12 +66,6 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
         except ProcessLookupError:
             pid_file.unlink()
 
-    log_file = None
-    if detach:
-        log_path = Path(f".svh_{service}.log")
-        log_file = open(log_path, "a", buffering=1)
-        notify.server(f"Logging {service} output to {log_path.resolve()}")
-
     cmd = [
         "python",
         "-m",
@@ -89,8 +83,8 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
     try:
         process = subprocess.Popen(
             cmd,
-            stdout=log_file if detach else None,
-            stderr=log_file if detach else None,
+            stdout=None,
+            stderr=None,
             text=True,
             start_new_session=True,
         )
