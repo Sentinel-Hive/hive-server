@@ -5,3 +5,6 @@ server:
 
 database:
   url: "sqlite:///./sentinel.db"
+  admin_user: "Username"
+  admin_pass: "Password"
+  Auth_Token: "43seudtrciyfvg5urtdc"
