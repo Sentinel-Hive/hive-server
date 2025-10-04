@@ -4,6 +4,19 @@ import re
 from pathlib import Path
 import yaml
 from svh import notify
+import psutil
+import os
+import platform
+
+
+def _process_exists(pid: int) -> bool:
+    if platform.system() == "Windows":
+        return psutil.pid_exists(pid)
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 def isHost(value: str) -> bool:

@@ -16,6 +16,7 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pyyaml",
+    "psutil",
 ]
 
 [project.scripts]

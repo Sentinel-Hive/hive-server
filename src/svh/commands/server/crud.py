@@ -4,7 +4,7 @@ import signal
 from pathlib import Path
 from svh import notify
 from svh.commands.server import firewall
-from svh.commands.server.helper import invalid_config, isHost
+from svh.commands.server.helper import invalid_config, isHost, _process_exists
 
 PID_FILES = {
     "client": Path(".svh_client_api.pid"),
@@ -58,9 +58,11 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
     if pid_file.exists():
         try:
             pid = int(pid_file.read_text())
-            os.kill(pid, 0)
-            notify.error(f"{service} API service is already running with pid:{pid}")
-            return
+            if _process_exists(pid):
+                notify.error(f"{service} API service is already running with pid:{pid}")
+                return
+            else:
+                pid_file.unlink()
         except ProcessLookupError:
             pid_file.unlink()
 
