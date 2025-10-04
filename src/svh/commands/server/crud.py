@@ -51,14 +51,20 @@ def _resolve_config(config: dict, service: str):
     return host, port
 
 
-def _start_service(config: dict, service: str, app_path: str):
+def _start_service(config: dict, service: str, app_path: str, detach: bool = False):
     pid_file = PID_FILES[service]
     host, port = _resolve_config(config, service)
 
-    if host == None or port == None:
-        raise ValueError(
-            f"Unexpected values found in `host: {host}, port: {port}` definitions."
-        )
+    if pid_file.exists():
+        pid = pid_file.read_text().strip()
+        notify.error(f"{service} API service is already running with pid:`{pid}`")
+        return
+
+    log_file = None
+    if detach:
+        log_path = Path(f".svh_{service}.log")
+        log_file = open(log_path, "a", buffering=1)
+        notify.server(f"Logging {service} output to {log_path.resolve()}")
 
     cmd = [
         "uvicorn",
@@ -72,17 +78,13 @@ def _start_service(config: dict, service: str, app_path: str):
         "critical",
     ]
 
-    if pid_file.exists():
-        pid = pid_file.read_text().strip()
-        notify.error(f"{service} API service is already running with pid:`{pid}`")
-        return
-
     try:
         process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=log_file if detach else subprocess.PIPE,
+            stderr=log_file if detach else subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
         pid_file.write_text(str(process.pid))
         notify.server(f"{service} API started on {host}:{port} (PID {process.pid})")
@@ -92,12 +94,12 @@ def _start_service(config: dict, service: str, app_path: str):
         exit(1)
 
 
-def start_user_server(config: dict):
-    _start_service(config, "client", "svh.commands.server.client_api.main:app")
+def start_client_server(config: dict, detach: bool = False):
+    _start_service(config, "client", "svh.commands.server.client_api.main:app", detach)
 
 
-def start_db_server(config: dict):
-    _start_service(config, "db", "svh.commands.server.db_api.main:app")
+def start_db_server(config: dict, detach: bool = False):
+    _start_service(config, "db", "svh.commands.server.db_api.main:app", detach)
 
 
 def _stop_service(config: dict, service: str):
