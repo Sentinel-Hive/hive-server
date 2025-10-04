@@ -45,7 +45,7 @@ python -m venv .venv
 
 **3. Activate virtual environment**
 ```bash
-.\.venv\Scripts\Activate.ps1
+.\.venv\Scripts\activate.bat
 ```
 
 **4. Install in editable (dev) mode**
