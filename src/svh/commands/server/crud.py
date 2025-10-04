@@ -2,7 +2,6 @@ import subprocess
 import os
 import signal
 from pathlib import Path
-from datetime import datetime
 from svh import notify
 from svh.commands.server import firewall
 from svh.commands.server.helper import invalid_config, isHost
