@@ -1,29 +1,25 @@
 import typer
-from sqlalchemy.orm import Session
 from .session import session_scope
-from .models import User
-from .security import gen_userid, gen_password, hash_password
+from .seed import create_user, seed_users
 
 app = typer.Typer(help="User utilities")
 
 @app.command(help="Create one user with generated credentials")
 def create(admin: bool = False):
     with session_scope() as s:
-        uid, pwd = _create_one(s, admin)
-        typer.echo(f"user_id={uid} password={pwd} admin={admin}")
+        uid_pwd_admin = create_user(s, admin)  # returns (user_id, password, is_admin) or dict per your export
+        # If you kept the dict shape, adapt the print line accordingly.
+        if isinstance(uid_pwd_admin, dict):
+            u, p, a = uid_pwd_admin["user_id"], uid_pwd_admin["password"], uid_pwd_admin["is_admin"]
+        else:
+            u, p, a = uid_pwd_admin
+        typer.echo(f"user_id={u} password={p} admin={a}")
 
-@app.command(help="Seed multiple users/admins")
+@app.command(help="Seed initial users on an empty DB (no-op if users already exist)")
 def seed(admins: int = 1, users: int = 5):
-    with session_scope() as s:
-        for _ in range(admins):
-            uid, pwd = _create_one(s, True)
-            typer.echo(f"user_id={uid} password={pwd} admin=True")
-        for _ in range(users):
-            uid, pwd = _create_one(s, False)
-            typer.echo(f"user_id={uid} password={pwd} admin=False")
-
-def _create_one(s: Session, is_admin: bool):
-    uid = gen_userid(); pwd = gen_password()
-    salt_hex, pass_hash = hash_password(pwd)
-    s.add(User(user_id=uid, is_admin=is_admin, salt_hex=salt_hex, pass_hash=pass_hash))
-    return uid, pwd
+    created = seed_users(admins, users)
+    if not created:
+        typer.echo("Users already exist; no seeding performed.")
+        return
+    for c in created:
+        typer.echo(f"user_id={c['user_id']} password={c['password']} admin={c['is_admin']}")

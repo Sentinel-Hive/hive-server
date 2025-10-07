@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import MetaData, Table, insert
-from ...db.session import get_session
+from .util import get_session
 from ...db.security import gen_userid, gen_password, hash_password
 from ...db.models import User
 

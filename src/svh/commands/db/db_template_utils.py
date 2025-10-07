@@ -1,61 +1,50 @@
-import json
-import shutil
-import os
+# src/svh/commands/db/db_template_utils.py
+from __future__ import annotations
+import json, shutil
+from pathlib import Path
+from typing import Any, Dict
 
-TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'db_template.json')
-DEFAULT_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'db_template.json')
+BASE = Path(__file__).resolve().parent
+CUSTOM_PATH  = BASE / "db_template.json"
+DEFAULT_PATH = BASE / "db_template.default.json"
 
+# Safe defaults for first run
+DEFAULT_TEMPLATE: Dict[str, Any] = {
+    "url": "sqlite:///./hive.sqlite",
+    "use_existing": True,
+}
 
-def load_db_template():
-    """Load the current database template as a dict."""
-    with open(TEMPLATE_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
+def _ensure_files() -> None:
+    if not DEFAULT_PATH.exists():
+        DEFAULT_PATH.write_text(json.dumps(DEFAULT_TEMPLATE, indent=2))
+    if not CUSTOM_PATH.exists():
+        shutil.copyfile(DEFAULT_PATH, CUSTOM_PATH)
 
+def load_db_template(use_custom: bool = True) -> Dict[str, Any]:
+    _ensure_files()
+    p = CUSTOM_PATH if use_custom else DEFAULT_PATH
+    return json.loads(p.read_text(encoding="utf-8"))
 
-def save_db_template(template_dict):
-    """Save the given template dict to the template file."""
-    with open(TEMPLATE_PATH, 'w', encoding='utf-8') as f:
-        json.dump(template_dict, f, indent=2)
+def save_db_template(template_dict: Dict[str, Any]) -> None:
+    _ensure_files()
+    CUSTOM_PATH.write_text(json.dumps(template_dict, indent=2), encoding="utf-8")
 
+def edit_db_template(edit_func) -> Dict[str, Any]:
+    """Edit with a function that receives & returns a dict."""
+    tpl = load_db_template(True)
+    new_tpl = edit_func(dict(tpl)) or tpl
+    save_db_template(new_tpl)
+    return new_tpl
 
-def edit_db_template(edit_func):
-    """Edit the template using a provided function that takes and returns a dict."""
-    template = load_db_template()
-    new_template = edit_func(template)
-    save_db_template(new_template)
+def patch_db_template(patch: Dict[str, Any]) -> Dict[str, Any]:
+    """Convenience: merge a dict of key=value updates."""
+    tpl = load_db_template(True)
+    tpl.update(patch or {})
+    save_db_template(tpl)
+    return tpl
 
-
-def reset_db_template():
-    """Reset the template to the default settings."""
-    shutil.copyfile(DEFAULT_TEMPLATE_PATH, TEMPLATE_PATH)
-
-import json
-import shutil
-import os
-
-TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'db_template.json')
-DEFAULT_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'db_template.json')
-
-
-def load_db_template():
-    """Load the current database template as a dict."""
-    with open(TEMPLATE_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-
-def save_db_template(template_dict):
-    """Save the given template dict to the template file."""
-    with open(TEMPLATE_PATH, 'w', encoding='utf-8') as f:
-        json.dump(template_dict, f, indent=2)
-
-
-def edit_db_template(edit_func):
-    """Edit the template using a provided function that takes and returns a dict."""
-    template = load_db_template()
-    new_template = edit_func(template)
-    save_db_template(new_template)
-
-
-def reset_db_template():
-    """Reset the template to the default settings."""
-    shutil.copyfile(DEFAULT_TEMPLATE_PATH, TEMPLATE_PATH)
+def reset_db_template() -> Dict[str, Any]:
+    """Restore CUSTOM from DEFAULT."""
+    _ensure_files()
+    shutil.copyfile(DEFAULT_PATH, CUSTOM_PATH)
+    return load_db_template(True)
