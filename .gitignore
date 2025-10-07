@@ -33,3 +33,8 @@ migrations/versions/__pycache__/
 
 # Rope Project file
 .ropeproject
+
+# Internally created files
+.svh_current_config
+.svh_client_api.pid
+.svh_db_api.pid

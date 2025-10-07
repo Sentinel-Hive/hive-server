@@ -39,6 +39,6 @@ def edit_template(json_path: str):
         raise typer.Exit(1)
     with open(json_path, 'r', encoding='utf-8') as f:
         new_template = json.load(f)
-    from svh.db_template_utils import save_db_template
+    from svh.commands.db.db_template_utils import save_db_template
     save_db_template(new_template)
     typer.echo("Database template updated from provided JSON file.")
