@@ -1,9 +1,11 @@
 import os
 import json
 import typer
-from sqlalchemy import inspect
+from sqlalchemy import inspect, MetaData, Table, select, func, text
+from datetime import datetime
+from sqlalchemy import update as sa_update, delete as sa_delete
 
-from svh.commands.db.session import create_all, get_engine
+from svh.commands.db.session import create_all, get_engine, session_scope
 from svh.commands.db.db_template_utils import (
     load_db_template,
     save_db_template,
@@ -129,3 +131,137 @@ def edit_template(json_path: str):
         new_template = json.load(f)
     save_db_template(new_template)
     typer.echo("Database template updated from provided JSON file.")
+
+@app.command(help="Show the SQLite file path if using sqlite:///; otherwise print the URL.")
+def path():
+    cfg = load_db_template()
+    url = cfg.get("url", "sqlite:///./hive.sqlite")
+    sqlite_path = _sqlite_path_from_url(url)
+    if sqlite_path:
+        typer.echo(sqlite_path)
+    else:
+        typer.echo(url)
+
+@app.command(help="List tables and row counts.")
+def tables():
+    create_all()
+    eng = get_engine()
+    insp = inspect(eng)
+    names = sorted(insp.get_table_names())
+    if not names:
+        typer.echo("(no tables)")
+        return
+    for t in names:
+        with eng.connect() as conn:
+            # safe because t comes from introspection, not user input
+            cnt = conn.execute(select(func.count()).select_from(Table(t, MetaData(), autoload_with=eng))).scalar_one()
+        typer.echo(f"{t}\t{cnt}")
+
+@app.command(help="Show schema for a table (columns, types, nullable, primary key).")
+def schema(table: str):
+    create_all()
+    eng = get_engine()
+    insp = inspect(eng)
+    if table not in insp.get_table_names():
+        typer.echo(f"Unknown table: {table}")
+        raise typer.Exit(1)
+    cols = insp.get_columns(table)
+    pk = set(insp.get_pk_constraint(table).get("constrained_columns", []) or [])
+    header = f"{'name':20} {'type':20} {'nullable':8} {'pk':2} {'default'}"
+    typer.echo(header)
+    typer.echo("-" * len(header))
+    for c in cols:
+        name = c.get("name", "")
+        typ  = str(c.get("type", ""))
+        nul  = str(c.get("nullable", ""))
+        dfl  = c.get("default", "")
+        ispk = "Y" if name in pk else ""
+        typer.echo(f"{name:20} {typ:20} {nul:8} {ispk:2} {dfl}")
+
+@app.command(help="Print up to N rows from a table.")
+def show(table: str, limit: int = typer.Option(10, "--limit")):
+    create_all()
+    eng = get_engine()
+    md = MetaData()
+    try:
+        tbl = Table(table, md, autoload_with=eng)
+    except Exception:
+        typer.echo(f"Unknown table: {table}")
+        raise typer.Exit(1)
+    with eng.connect() as conn:
+        res = conn.execute(select(tbl).limit(limit))
+        rows = [dict(r._mapping) for r in res]
+    if not rows:
+        typer.echo("(no rows)")
+        return
+    cols = list(rows[0].keys())
+    typer.echo("\t".join(cols))
+    for r in rows:
+        typer.echo("\t".join("" if r[c] is None else str(r[c]) for c in cols))
+
+@app.command(help="Run a read-only SQL query (SELECT/CTE). Use --write to allow writes.")
+def sql(query: str, write: bool = typer.Option(False, "--write")):
+    q = (query or "").lstrip().lower()
+    if not write and not (q.startswith("select") or q.startswith("with")):
+        typer.echo("Refusing non-SELECT without --write")
+        raise typer.Exit(1)
+    create_all()
+    eng = get_engine()
+    with eng.connect() as conn:
+        res = conn.execute(text(query))
+        try:
+            rows = res.mappings().all()
+        except Exception:
+            typer.echo("(ok)")
+            return
+    if not rows:
+        typer.echo("(no rows)")
+        return
+    cols = list(rows[0].keys())
+    typer.echo("\t".join(cols))
+    for r in rows:
+        typer.echo("\t".join("" if r[c] is None else str(r[c]) for c in cols))
+
+@app.command(help="Revoke all active tokens (set revoked_at=now). Use --hard to DELETE rows instead.")
+def clear_tokens(
+    hard: bool = typer.Option(False, "--hard", help="Hard delete all rows instead of revoking"),
+    vacuum: bool = typer.Option(False, "--vacuum", help="Run VACUUM after hard delete (SQLite only)")
+):
+    from svh.commands.db.models import AuthToken
+    from svh.commands.db.db_template_utils import load_db_template
+
+    create_all()
+    with session_scope() as s:
+        if hard:
+            s.execute(sa_delete(AuthToken))
+            typer.echo("Hard-deleted auth_tokens.")
+        else:
+            s.execute(
+                sa_update(AuthToken)
+                .where(AuthToken.revoked_at.is_(None))
+                .values(revoked_at=datetime.utcnow())
+            )
+            typer.echo("Revoked all active tokens (kept history).")
+
+    url = load_db_template().get("url", "sqlite:///./hive.sqlite")
+    if hard and vacuum and url.startswith("sqlite:///"):
+        eng = get_engine()
+        with eng.begin() as conn:
+            conn.exec_driver_sql("VACUUM")
+        typer.echo("VACUUM complete.")
+
+
+        # ---- convenience command for devs only -----REMOVE FOR PRODUCTION--------------
+
+@app.command(help="Create or update a developer admin account (local CLI).")
+def dev_admin(
+    user: str = typer.Option("admin", "--user", help="Dev admin user_id"),
+    password: str = typer.Option("admin", "--pass", help="Dev admin password"),
+):
+    from svh.commands.db.seed import upsert_user
+    create_all()
+    with session_scope() as s:
+        out = upsert_user(s, user, password, is_admin=True)
+    action = "Created" if out["created"] else "Updated"
+    typer.echo(f"{action} dev admin: user_id={out['user_id']} password={out['password']} admin=True")
+

@@ -1,13 +1,16 @@
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException
+import os
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 from sqlalchemy import MetaData, Table, insert
-from .util import get_session
-from ...db.security import gen_userid, gen_password, hash_password
-from ...db.models import User
+from .util import get_session_cm, require_admin
+from ...db.seed import create_user as _create_user  # canonical creator
+from ...db.session import get_engine
 
 router = APIRouter()
+
+# Toggle public registration (no token) for dev if desired
+PUBLIC_SIGNUP = os.getenv("SVH_PUBLIC_SIGNUP", "false").lower() == "true"
 
 class CreateUserOut(BaseModel):
     user_id: str
@@ -15,32 +18,30 @@ class CreateUserOut(BaseModel):
     is_admin: bool
 
 @router.post("/create", response_model=CreateUserOut)
-def create_user(admin: bool = False):
-    with get_session() as s:
-        uid, pwd = _create_one(s, admin)
-        return CreateUserOut(user_id=uid, password=pwd, is_admin=admin)
+def create_user(admin: bool = False, _: object = Depends(require_admin)):
+    with get_session_cm() as s:
+        uid, pwd, is_admin = _create_user(s, admin)
+        return CreateUserOut(user_id=uid, password=pwd, is_admin=is_admin)
 
 @router.post("/seed", response_model=list[CreateUserOut])
-def seed_users(admins: int = 1, users: int = 5):
+def seed_users(admins: int = 1, users: int = 5, _: object = Depends(require_admin)):
     if admins < 0 or users < 0:
         raise HTTPException(400, "Counts must be >= 0")
     out: list[CreateUserOut] = []
-    with get_session() as s:
+    with get_session_cm() as s:
         for _ in range(admins):
-            uid, pwd = _create_one(s, True)
-            out.append(CreateUserOut(user_id=uid, password=pwd, is_admin=True))
+            uid, pwd, is_admin = _create_user(s, True)
+            out.append(CreateUserOut(user_id=uid, password=pwd, is_admin=is_admin))
         for _ in range(users):
-            uid, pwd = _create_one(s, False)
-            out.append(CreateUserOut(user_id=uid, password=pwd, is_admin=False))
+            uid, pwd, is_admin = _create_user(s, False)
+            out.append(CreateUserOut(user_id=uid, password=pwd, is_admin=is_admin))
     return out
 
 class InsertRowIn(BaseModel):
     values: dict
 
 @router.post("/insert/{table_name}")
-def insert_row(table_name: str, body: InsertRowIn):
-    # Generic insert: reflect and insert as-is
-    from ...db.session import get_engine
+def insert_row(table_name: str, body: InsertRowIn, _: object = Depends(require_admin)):
     engine = get_engine()
     md = MetaData()
     try:
@@ -51,10 +52,11 @@ def insert_row(table_name: str, body: InsertRowIn):
         conn.execute(insert(tbl).values(**body.values))
     return {"ok": True}
 
-# --- helpers ---
-def _create_one(s: Session, is_admin: bool):
-    uid = gen_userid(); pwd = gen_password()
-    salt_hex, pass_hash = hash_password(pwd)
-    s.add(User(user_id=uid, is_admin=is_admin, salt_hex=salt_hex, pass_hash=pass_hash))
-    s.flush()
-    return uid, pwd
+@router.post("/register", response_model=CreateUserOut)
+def register_user():
+    """Public sign-up (disabled by default). Set SVH_PUBLIC_SIGNUP=true to enable."""
+    if not PUBLIC_SIGNUP:
+        raise HTTPException(403, "Public signup is disabled")
+    with get_session_cm() as s:
+        uid, pwd, is_admin = _create_user(s, False)
+        return CreateUserOut(user_id=uid, password=pwd, is_admin=is_admin)

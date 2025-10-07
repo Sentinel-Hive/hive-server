@@ -5,6 +5,5 @@ router = APIRouter()
 
 @router.get("/ready")
 def ready():
-    # ensure tables exist
-    create_all()
+    create_all()  # ensure tables exist (idempotent)
     return {"ok": True}
