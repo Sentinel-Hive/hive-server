@@ -1,6 +1,6 @@
 import typer
 import os
-from svh import db
+from . import db
 
 app = typer.Typer(help="Database management commands")
 

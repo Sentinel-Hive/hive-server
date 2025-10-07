@@ -51,7 +51,12 @@ def manage_service(
 
         signal.signal(signal.SIGINT, handle_exit)
         signal.signal(signal.SIGTERM, handle_exit)
-        signal.pause()
+        import time
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
 
     elif action == "stop":
         for s in selected:
