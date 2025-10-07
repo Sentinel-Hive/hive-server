@@ -1,13 +1,13 @@
 import os, secrets, string, hashlib, hmac
 from typing import Tuple
 
-ALPH = string.ascii_letters + string.digits
+_ALPH = string.ascii_letters + string.digits
 
 def gen_userid(n: int = 10) -> str:
-    return "".join(secrets.choice(ALPH) for _ in range(n))
+    return "".join(secrets.choice(_ALPH) for _ in range(n))
 
 def gen_password(n: int = 16) -> str:
-    return "".join(secrets.choice(ALPH) for _ in range(n))
+    return "".join(secrets.choice(_ALPH) for _ in range(n))
 
 def hash_password(password: str, salt: bytes | None = None) -> Tuple[str, str]:
     salt = salt or os.urandom(16)

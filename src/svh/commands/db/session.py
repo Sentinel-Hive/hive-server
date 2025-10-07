@@ -2,7 +2,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from .template import load
+from svh.commands.db.db_template_utils import load_db_template
 from .models import Base
 
 _engine = None
@@ -10,8 +10,8 @@ _Session = None
 
 def configure_engine():
     global _engine, _Session
-    db_url = load(True)["url"]
-    _engine = create_engine(db_url, future=True, pool_pre_ping=True)
+    url = load_db_template().get("url", "sqlite:///./hive.sqlite")
+    _engine = create_engine(url, future=True, pool_pre_ping=True)
     _Session = sessionmaker(bind=_engine, autoflush=False, autocommit=False, future=True)
 
 def create_all():
