@@ -73,6 +73,7 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
         log_file = open(log_path, "a", buffering=1)
         notify.server(f"Logging {service} output to {log_path.resolve()}")
 
+
     cmd = [
         sys.executable,
         "-m",

@@ -11,7 +11,8 @@ def open_port(port: int, proto: str = "tcp"):
     elif os_name == "windows":
         cmd = [
             "powershell",
-            f"New-NetFirewallRule -DisplayName 'AllowPort{port}' -Direction Inbound -Protocol {proto.upper()} -LocalPort {port} -Action Allow",
+            "New-NetFirewallRule -DisplayName 'AllowPort{port}' "
+            f"-Direction Inbound -Protocol {proto.upper()} -LocalPort {port} -Action Allow",
         ]
     elif os_name == "darwin":
         notify.error("This application is not supported on macOS.")
