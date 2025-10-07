@@ -16,11 +16,8 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pyyaml",
-<<<<<<< HEAD
     "python-multipart",
-=======
     "psutil",
->>>>>>> origin/main
 ]
 
 [project.scripts]
