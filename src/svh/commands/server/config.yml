@@ -1,7 +1,7 @@
 server:
   host: "0.0.0.0"
-  client_port: 8006
-  db_port: 8007
+  client_port: 5167
+  db_port: 5169
 
 database:
   url: "sqlite:///./sentinel.db"
