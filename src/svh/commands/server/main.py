@@ -9,7 +9,7 @@ app = typer.Typer(help="Server management commands")
 
 app.add_typer(config.config_app, name="config")
 
-DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yml"
+DEFAULT_CONFIG_PATH = Path(__file__).parent / "config/config.yml"
 
 
 @app.command(help="Start one or more API servers.")
