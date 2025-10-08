@@ -4,7 +4,7 @@ import signal
 from pathlib import Path
 from svh import notify
 from svh.commands.server import firewall
-from svh.commands.server.helper import invalid_config, isHost, _process_exists
+from svh.commands.server.helper import _invalid_config, isHost, _process_exists
 
 PID_FILES = {
     "client": Path(".svh_client_api.pid"),
@@ -20,7 +20,7 @@ def _resolve_config(config: dict, service: str):
     host = server_cfg.get("host").strip().lstrip("\"'").rstrip("\"'")
     if not host:
         notify.error(f"No host specified in configuration: [host: {host}]")
-        useDefault = invalid_config("host")
+        useDefault = _invalid_config("host")
         if useDefault:
             notify.server(f"Defaulting to host:`{DEFAULT_HOST}`")
             host = DEFAULT_HOST

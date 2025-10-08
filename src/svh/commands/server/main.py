@@ -1,9 +1,9 @@
 import typer
 from pathlib import Path
-from svh.commands.server import state, crud
+from svh.commands.server import crud
 from svh.commands.server.manager import manage_service
 from svh.commands.server.helper import load_config
-from svh.commands.server import config
+from svh.commands.server.config import config, state
 
 app = typer.Typer(help="Server management commands")
 

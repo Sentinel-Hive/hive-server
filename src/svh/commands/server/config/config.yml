@@ -3,8 +3,10 @@ server:
   client_port: 5167
   db_port: 5169
 
+firewall:
+  close_by_default: True
+  allowed_ports: [22, 5167, 5169]
+
 database:
   url: "sqlite:///./sentinel.db"
   admin_user: "Username"
-  admin_pass: "Password"
-  Auth_Token: "43seudtrciyfvg5urtdc"
