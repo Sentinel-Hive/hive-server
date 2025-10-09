@@ -4,8 +4,9 @@ server:
   db_port: 5169
 
 firewall:
+  ssh_service: False
   close_by_default: True
-  allowed_ports: [22, 5167, 5169]
+  allowed_ports: []
 
 database:
   url: "sqlite:///./sentinel.db"
