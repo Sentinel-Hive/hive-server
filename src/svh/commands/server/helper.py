@@ -33,7 +33,7 @@ def isHost(value: str) -> bool:
     return False
 
 
-def invalid_config(field) -> bool:
+def _invalid_config(field) -> bool:
     choice = input(
         f"Invalid {field} detected. Would you like to use the defualt? [y/n] "
     )

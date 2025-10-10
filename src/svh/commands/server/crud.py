@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from svh import notify
 from svh.commands.server import firewall
-from svh.commands.server.helper import invalid_config, isHost, _process_exists
+from svh.commands.server.helper import _invalid_config, isHost, _process_exists
 
 PID_FILES = {
     "client": Path(".svh_client_api.pid"),
@@ -21,7 +21,7 @@ def _resolve_config(config: dict, service: str):
     host = server_cfg.get("host").strip().lstrip("\"'").rstrip("\"'")
     if not host:
         notify.error(f"No host specified in configuration: [host: {host}]")
-        useDefault = invalid_config("host")
+        useDefault = _invalid_config("host")
         if useDefault:
             notify.server(f"Defaulting to host:`{DEFAULT_HOST}`")
             host = DEFAULT_HOST
@@ -67,13 +67,6 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
         except ProcessLookupError:
             pid_file.unlink()
 
-    log_file = None
-    if detach:
-        log_path = Path(f".svh_{service}.log")
-        log_file = open(log_path, "a", buffering=1)
-        notify.server(f"Logging {service} output to {log_path.resolve()}")
-
-
     cmd = [
         sys.executable,
         "-m",
@@ -91,8 +84,8 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
     try:
         process = subprocess.Popen(
             cmd,
-            stdout=log_file if detach else None,
-            stderr=log_file if detach else None,
+            stdout=None,
+            stderr=None,
             text=True,
             start_new_session=True,
         )

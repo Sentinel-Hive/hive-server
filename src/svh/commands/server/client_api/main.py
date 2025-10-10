@@ -2,7 +2,11 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import os
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, UploadFile, File
+from typing import List, Optional
+import platform
+from datetime import datetime
+from svh import notify
 
 
 @asynccontextmanager
@@ -31,3 +35,29 @@ from .health import router as health_router
 app.include_router(health_router, prefix="/health", tags=["health"])
 app.include_router(users_router,  prefix="/users",  tags=["users"])
 app.include_router(auth_router,   prefix="/auth",   tags=["auth"])
+
+
+@app.post("/ingest")
+async def ingest(request: Request, files: Optional[List[UploadFile]] = File(None)):
+    try:
+        if files:
+            count = len(files)
+            notify.server(f"Received {count} file(s) via multipart/form-data")
+            return {"status": "received", "files_received": count}
+
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type:
+            data = await request.json()
+            count = len(data.get("files", [])) if isinstance(data, dict) else 0
+            notify.server(f"Received {count} file(s) via JSON payload")
+            return {"status": "received", "files_received": count}
+
+        notify.error(f"Unsupported Content-Type: {content_type}")
+        return {
+            "status": "error",
+            "detail": f"Unsupported Content-Type: {content_type}",
+        }
+
+    except Exception as e:
+        notify.error(f"Error processing ingestion request: {e}")
+        return {"status": "error", "detail": str(e)}

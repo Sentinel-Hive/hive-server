@@ -39,3 +39,6 @@ hive.sqlite
 .svh_current_config
 .svh_client_api.pid
 .svh_db_api.pid
+
+#configs
+config.yml
