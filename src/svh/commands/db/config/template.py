@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 BASE = Path(__file__).resolve().parent
-CUSTOM_PATH  = BASE / "db.template.json"
-DEFAULT_PATH = BASE / "db.template.default.json"
+CUSTOM_PATH  = BASE / "db_template.json"
+DEFAULT_PATH = BASE / "db_template.default.json"
 
 DEFAULT_TEMPLATE: Dict[str, Any] = {
     "url": "sqlite:///./hive.sqlite",

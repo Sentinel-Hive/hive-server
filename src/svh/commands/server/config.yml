@@ -1,6 +1,6 @@
 server:
   host: "0.0.0.0"
-  client_port: 8000
+  client_port: 6967
   db_port: 8001
 
 database:

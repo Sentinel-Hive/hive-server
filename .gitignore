@@ -30,7 +30,7 @@ migrations/versions/__pycache__/
 
 # SQLite DB files (optional if using SQLite for dev)
 *.sqlite3
-*.sqlite
+hive.sqlite
 
 # Rope Project file
 .ropeproject
