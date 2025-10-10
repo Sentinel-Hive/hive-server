@@ -1,6 +1,7 @@
 import subprocess
 import os
 import signal
+import sys
 from pathlib import Path
 from svh import notify
 from svh.commands.server import firewall
@@ -67,7 +68,7 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
             pid_file.unlink()
 
     cmd = [
-        "python",
+        sys.executable,
         "-m",
         "uvicorn",
         app_path,

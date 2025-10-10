@@ -1,0 +1,11 @@
+{
+  "tables": [
+    "users",
+    "auth_tokens",
+    "events"
+  ],
+  "settings": {
+    "echo": false,
+    "future": true
+  }
+}
