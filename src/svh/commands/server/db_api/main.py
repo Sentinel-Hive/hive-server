@@ -4,24 +4,32 @@ from datetime import datetime
 
 from fastapi import FastAPI
 from sqlalchemy import select, update as sa_update, delete as sa_delete
+from sqlalchemy.exc import OperationalError
 from ...db.session import session_scope
 from ...db.models import AuthToken
 import platform
+from svh.commands.db.session import create_all, session_scope
+from svh.commands.db.models import AuthToken
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # On startup: mark all active tokens revoked; then prune to keep only latest revoked per user
-    with session_scope() as s:
-        s.execute(sa_update(AuthToken).where(AuthToken.revoked_at.is_(None)).values(revoked_at=datetime.utcnow()))
-        user_ids = s.scalars(select(AuthToken.user_id_fk).distinct()).all()
-        for uid in user_ids:
-            ids = s.scalars(
-                select(AuthToken.id)
-                .where(AuthToken.user_id_fk == uid, AuthToken.revoked_at.is_not(None))
-                .order_by(AuthToken.revoked_at.desc(), AuthToken.id.desc())
-            ).all()
-            if len(ids) > 1:
-                s.execute(sa_delete(AuthToken).where(AuthToken.id.in_(ids[1:])))
+    # 1) Ensure tables exist before anything else
+    create_all()
+
+    # 2) Best effort: revoke any non-revoked tokens from prior run
+    try:
+        with session_scope() as s:
+            s.execute(
+                sa_update(AuthToken)
+                .where(AuthToken.revoked_at.is_(None))
+                .values(revoked_at=datetime.utcnow())
+            )
+            # session_scope() handles commit
+    except OperationalError:
+        # If the table truly didn’t exist yet or any race, skip silently.
+        # Next request has a fully created schema anyway.
+        pass
+
     yield
 
 app = FastAPI(title="SVH DB API", lifespan=lifespan)

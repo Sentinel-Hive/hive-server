@@ -30,7 +30,6 @@ migrations/versions/__pycache__/
 
 # SQLite DB files (optional if using SQLite for dev)
 *.sqlite3
-hive.sqlite
 
 # Rope Project file
 .ropeproject
@@ -42,3 +41,4 @@ hive.sqlite
 
 #configs
 config.yml
+hive.sqlite

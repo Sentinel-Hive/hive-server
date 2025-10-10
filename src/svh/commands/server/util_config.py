@@ -3,19 +3,18 @@ from pathlib import Path
 from typing import Tuple
 import os, yaml
 
-# ---------- locate config.yml robustly ----------
+# ---------- locate config.yml ----------
 
 def _resolve_cfg_path() -> Path:
     """
     Resolution order:
-      1) SVH_CONFIG_YML environment variable:
-         - if points to a file -> use it
-         - if points to a directory -> append 'config.yml'
-      2) Repo-standard path: <repo_root>/server/config/config.yml
-      3) Legacy fallback:     <repo_root>/server/config.yml
-      4) CWD fallbacks:       ./server/config/config.yml, then ./server/config.yml
+      1) SVH_CONFIG_YML env:
+         - if file -> use it
+         - if directory -> append 'config.yml'
+      2) Package-local: <this_dir>/config/config.yml
+      3) CWD fallback:  ./src/svh/commands/server/config/config.yml
     """
-    # 1) Explicit env override
+    # 1) explicit override
     env = os.getenv("SVH_CONFIG_YML")
     if env:
         p = Path(env).expanduser()
@@ -23,36 +22,20 @@ def _resolve_cfg_path() -> Path:
             p = p / "config.yml"
         return p.resolve()
 
-    # Helper: guess repo root from this file location (…/src/svh/commands/server/util_config.py)
     here = Path(__file__).resolve()
-    # repo_root ≈ here.parents[4]  (…/src/ -> parent -> repo root)
-    # Defensive: check a couple of parent depths to be safe across layouts.
-    candidates_root = []
-    for depth in (4, 5):
-        try:
-            candidates_root.append(here.parents[depth])
-        except IndexError:
-            pass
 
-    candidates: list[Path] = []
-    for root in candidates_root:
-        candidates += [
-            root / "server" / "config" / "config.yml",  # new location
-            root / "server" / "config.yml",             # legacy
-        ]
-    # also try from current working directory (dev runs)
-    cwd = Path.cwd()
-    candidates += [
-        cwd / "server" / "config" / "config.yml",
-        cwd / "server" / "config.yml",
-    ]
+    # 2) package-local (your canonical location)
+    pkg_local = here.parent / "config" / "config.yml"
+    if pkg_local.is_file():
+        return pkg_local
 
-    for p in candidates:
-        if p.is_file():
-            return p.resolve()
+    # 3) CWD fallback for odd run contexts
+    cwd_fallback = Path.cwd() / "src" / "svh" / "commands" / "server" / "config" / "config.yml"
+    if cwd_fallback.is_file():
+        return cwd_fallback.resolve()
 
-    # default to where it *should* be, even if missing
-    return (candidates_root[0] / "server" / "config" / "config.yml") if candidates_root else (cwd / "server" / "config" / "config.yml")
+    # default to package-local path even if missing (useful for debug prints)
+    return pkg_local
 
 CFG_PATH = _resolve_cfg_path()
 _cache = {"mtime": 0.0, "cfg": None}
@@ -71,7 +54,7 @@ def _read_cfg() -> dict:
         pass
     # Defaults when no/invalid YAML:
     return {
-        "server": {"host": "0.0.0.0", "client_port": 8000, "db_port": 8001},
+        "server": {"host": "0.0.0.0", "client_port": 5167, "db_port": 5169},
         "database": {"url": "sqlite:///./hive.sqlite"},
     }
 

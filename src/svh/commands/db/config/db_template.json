@@ -1,7 +1,7 @@
 {
   "tables": [
     "users",
-    "server_auth",
+    "auth_tokens",
     "events"
   ],
   "settings": {
