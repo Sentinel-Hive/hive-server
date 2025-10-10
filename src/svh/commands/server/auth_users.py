@@ -83,8 +83,8 @@ def _ensure_admin(base_url: str) -> str:
 # ---------- Commands: login/logout ----------
 @app.command("login", help="Login to the Client API and store a token (required for admin commands).")
 def login(
-    user_id: str = typer.Option(..., "--user-id"),
-    password: str = typer.Option(..., "--password"),
+    user_id: str = typer.Option(..., "--u"),
+    password: str = typer.Option(..., "--p"),
     ttl: int = typer.Option(3600, "--ttl", help="Session TTL (seconds)"),
     base_url: str = _base_url_opt(),
     replace: bool = typer.Option(False, "--replace", help="Auto-logout the existing session if present"),

@@ -1,6 +1,6 @@
 import typer
 from svh.commands.server import main as serverCore
-from svh.commands.db import core as dbCore
+from svh.commands.db import main as dbCore
 
 app = typer.Typer(
     help="Hive-Server CLI",

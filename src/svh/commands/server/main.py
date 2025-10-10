@@ -3,11 +3,13 @@ from pathlib import Path
 from svh.commands.server import state, crud
 from svh.commands.server.manager import manage_service
 from svh.commands.server.helper import load_config
+from svh.commands.server.cli_auth import attach_auth_commands
 
 app = typer.Typer(help="Server management commands")
 
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "config.yml"
 
+attach_auth_commands(app)
 
 @app.command(help="Start one or more API servers.")
 def start(
@@ -38,3 +40,5 @@ def stop(
 @app.command(help="List all API servers currently running.")
 def list():
     crud.list_servers()
+
+

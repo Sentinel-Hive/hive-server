@@ -1,0 +1,4 @@
+{
+  "url": "sqlite:///./hive.sqlite",
+  "use_existing": true
+}
