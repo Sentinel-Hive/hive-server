@@ -29,7 +29,7 @@ def seed_users(admins: int, users: int) -> list[dict]:
     created: list[dict] = []
     with session_scope() as s:
         if _has_any_users(s):
-            return created  # already initialized; do nothing
+            return created
         for _ in range(admins):
             uid, pwd, a = create_user(s, True)
             created.append({"user_id": uid, "password": pwd, "is_admin": a})
@@ -43,7 +43,6 @@ def upsert_user(s: Session, user_id: str, password: str, is_admin: bool = True) 
     Create or update a user with a fixed user_id/password.
     Returns: {user_id, password, is_admin, created: bool}
     """
-    # lazy import to avoid circulars at module import time
     salt_hex, pass_hash = hash_password(password)
     user = s.scalar(select(User).where(User.user_id == user_id))
     created = False

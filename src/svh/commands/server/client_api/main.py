@@ -19,9 +19,9 @@ if DEV_CORS:
         # Dev webview origin for Tauri/Vite
         allow_origins=["http://localhost:1420", "http://127.0.0.1:1420"],
         allow_origin_regex=r"tauri://.*",
-        allow_credentials=True,   # harmless since you use Bearer tokens
-        allow_methods=["*"],      # covers preflight + all verbs
-        allow_headers=["*"],      # lets you send Authorization, etc.
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
 from .auth import router as auth_router

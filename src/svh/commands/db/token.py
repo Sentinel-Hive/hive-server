@@ -1,7 +1,7 @@
 import os, time, hmac, hashlib, threading
 from typing import Optional, Tuple
 
-_SECRET = os.environ.get("SVH_AUTH_SECRET", "dev-change-me")
+_SECRET = os.environ.get("SVH_AUTH_SECRET", "developers-sentinel-hive")
 
 class _Cache:
     def __init__(self):

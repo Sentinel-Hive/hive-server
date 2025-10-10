@@ -6,6 +6,17 @@ from pathlib import Path
 
 _sysrand = secrets.SystemRandom()
 
+"""
+Credential Generation Policy:
+
+Default is MEMORABLE- usernames and passwords are built from a wordlist
+(e.g. 'silver-otter-42', 'forest-apple-river87!').
+
+Opting for RANDOM gives non-memorable but still URL-safe credentials (set SVH_CRED_STYLE=random)
+(e.g. 'N9fX8v3bQ2', 'G5kTz1mWq8pL').
+
+"""
+
 # --------- wordlist loading -------------------------------------------------
 def _load_words() -> list[str]:
     """Load words from wordlist.txt (one per line). Falls back to a small set."""
@@ -17,7 +28,7 @@ def _load_words() -> list[str]:
         words = [w for w in words if w.isascii() and w.replace("-", "").isalpha()]
         if len(words) >= 1024:
             return words
-    # Tiny fallback (dev only). For real strength, add a 2k+ word list to wordlist.txt
+    # Tiny fallback (dev only, if no wordlist exists)
     return [
         "sky","river","stone","forest","coffee","apple","delta","ember","nova","pilot",
         "solar","ocean","pixel","orbit","rocket","silver","amber","hazel","neon","quartz",
@@ -50,7 +61,7 @@ def _mem_passphrase(words:int=4, sep:str="-", add_digit:bool=True, add_symbol:bo
         pw += _sysrand.choice("!@#$%^&*")
     return pw
 
-# --------- env-configurable front doors (used by the rest of the code) -----
+# --------- env-configurable front doors -----
 def gen_userid() -> str:
     """
     Generate a human-friendly user_id.
@@ -62,7 +73,7 @@ def gen_userid() -> str:
     """
     style = os.getenv("SVH_CRED_STYLE", "memorable").lower()
     if style == "random":
-        # old behavior: 10 random URL-safe chars
+        # non-memorable-- 10 random URL-safe chars
         return secrets.token_urlsafe(8).rstrip("=")
     return _mem_username(
         words=int(os.getenv("SVH_USER_WORDS", "2")),
@@ -83,7 +94,7 @@ def gen_password() -> str:
     """
     style = os.getenv("SVH_CRED_STYLE", "memorable").lower()
     if style == "random":
-        # old behavior: 16 random chars (url-safe)
+        # non-memorable-- 16 random chars (url-safe)
         return secrets.token_urlsafe(12).rstrip("=")
     return _mem_passphrase(
         words=int(os.getenv("SVH_PASS_WORDS", "4")),

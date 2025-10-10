@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import update as sa_update, delete as sa_delete
 
 from svh.commands.db.session import create_all, get_engine, session_scope
-from svh.commands.db.db_template_utils import (
+from svh.commands.db.config.template import (
     load_db_template,
     save_db_template,
     reset_db_template,
@@ -29,7 +29,6 @@ def _db_exists() -> bool:
     sqlite_path = _sqlite_path_from_url(url)
     if sqlite_path:
         return os.path.exists(sqlite_path)
-    # non-SQLite: consider DB "existing" if any tables exist
     eng = get_engine()
     return bool(inspect(eng).get_table_names())
 
@@ -66,10 +65,8 @@ def create(
             os.remove(sqlite_path)
             typer.echo("Existing SQLite database file deleted.")
         else:
-            # For non-SQLite we won’t drop the remote DB from the CLI.
             typer.echo("Non-SQLite URL detected; skipping physical deletion (will reuse connection).")
 
-    # (re)create schema per current template URL
     create_all()
     typer.echo("Database created/initialized from template URL.")
 
@@ -83,7 +80,6 @@ def create(
             admins = typer.prompt("How many ADMIN users to auto-create?", default=1, type=int)
             users  = typer.prompt("How many NON-admin users to auto-create?", default=0, type=int)
 
-        # Persist chosen defaults back to the template (optional convenience)
         cfg["seed_admins"], cfg["seed_users"] = int(admins), int(users)
         save_db_template(cfg)
 
@@ -228,7 +224,7 @@ def clear_tokens(
     vacuum: bool = typer.Option(False, "--vacuum", help="Run VACUUM after hard delete (SQLite only)")
 ):
     from svh.commands.db.models import AuthToken
-    from svh.commands.db.db_template_utils import load_db_template
+    from svh.commands.db.config.template import load_db_template
 
     create_all()
     with session_scope() as s:
@@ -251,7 +247,7 @@ def clear_tokens(
         typer.echo("VACUUM complete.")
 
 
-        # ---- convenience command for devs only -----REMOVE FOR PRODUCTION--------------
+# ---- convenience command for devs only -----REMOVE FOR PRODUCTION--------------
 
 @app.command(help="Create or update a developer admin account (local CLI).")
 def dev_admin(

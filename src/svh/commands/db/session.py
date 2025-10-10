@@ -2,7 +2,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from svh.commands.db.db_template_utils import load_db_template
+from svh.commands.db.config.template import load_db_template
 from .models import Base
 
 _engine = None

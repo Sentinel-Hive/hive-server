@@ -1,13 +1,13 @@
 from __future__ import annotations
-from datetime import datetime
 import json, os, urllib.request, urllib.error
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from .util import get_session_cm
+from .util import current_user
 
 from ...db.token import cache
+from ...db.models import User
 
 DB_API_BASE = os.getenv("SVH_DB_API_BASE", "http://127.0.0.1:8001")
 
@@ -81,3 +81,7 @@ def logout(request: Request, body: LogoutIn | None = None):
 def check(token: str):
     # ACTIVE only if present in in-memory cache (restart/log out → revoked)
     return {"status": "active"} if cache.get(token) else {"status": "revoked"}
+
+@router.get("/whoami")
+def whoami(user: User = Depends(current_user)):
+    return {"user_id": user.user_id, "is_admin": user.is_admin}

@@ -33,14 +33,14 @@ class AuthToken(Base):
 class Event(Base):
     """
     Generic event table for all types of network/security/application events.
-    Designed for analytics and flexible event storage (Splunk-like).
+    Further expand next sprint with better idea of exactly what we want to log/store for analytics/alerts.
     """
     __tablename__ = "events"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    event_type = Column(String(100), nullable=False, index=True)  # e.g., 'sign_in', 'network', 'alert', etc.
+    event_type = Column(String(100), nullable=False, index=True)
     timestamp = Column(DateTime, default=func.now(), nullable=False, index=True)
-    source = Column(String(100), nullable=True, index=True)  # e.g., 'firewall', 'auth', 'proxy', etc.
-    details = Column(JSON, nullable=True)  # Flexible event-specific data
+    source = Column(String(100), nullable=True, index=True)
+    details = Column(JSON, nullable=True)
 
     def __repr__(self):
         return f"<Event(id={self.id}, type='{self.event_type}', timestamp='{self.timestamp}')>"
