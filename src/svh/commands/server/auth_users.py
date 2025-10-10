@@ -7,7 +7,7 @@ app = typer.Typer(help="Server management and authenticated admin utilities.")
 
 # ---------- Config ----------
 def _base_url_opt():
-    return typer.Option("http://127.0.0.1:8000", "--base-url", envvar="SVH_API_BASE",
+    return typer.Option("http://127.0.0.1:5169", "--base-url", envvar="SVH_API_BASE",
                         help="Base URL of the Client API (the app talks to this).")
 
 def _token_file() -> str:

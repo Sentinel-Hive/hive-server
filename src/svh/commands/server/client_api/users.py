@@ -1,15 +1,16 @@
 from __future__ import annotations
 import json, os, urllib.request, urllib.error, urllib.parse
 from fastapi import APIRouter, HTTPException, Depends
+from svh.commands.server.util_config import get_db_api_base_for_client
 from pydantic import BaseModel
 from .util import require_admin
 
-DB_API_BASE = os.getenv("SVH_DB_API_BASE", "http://127.0.0.1:8001")
 
 router = APIRouter()
 
 def _db_post(path: str, payload: dict | None = None) -> dict:
-    url = urllib.parse.urljoin(DB_API_BASE, path)
+    base = get_db_api_base_for_client()
+    url = base + path
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")

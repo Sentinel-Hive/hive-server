@@ -3,13 +3,12 @@ import json, os, urllib.request, urllib.error
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-
+from svh.commands.server.util_config import get_db_api_base_for_client
 from .util import current_user
 
 from ...db.token import cache
 from ...db.models import User
 
-DB_API_BASE = os.getenv("SVH_DB_API_BASE", "http://127.0.0.1:8001")
 
 router = APIRouter()
 
@@ -22,7 +21,7 @@ class LoginOut(BaseModel):
     token: str
 
 def _db_post(path: str, payload: dict) -> dict:
-    url = DB_API_BASE + path
+    url = get_db_api_base_for_client() + path
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")

@@ -4,14 +4,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from svh.commands.db.config.template import load_db_template
 from .models import Base
-
+from svh.commands.server.util_config import get_database_url
+DB_URL = get_database_url()
 _engine = None
 _Session = None
 
 def configure_engine():
     global _engine, _Session
-    url = load_db_template().get("url", "sqlite:///./hive.sqlite")
-    _engine = create_engine(url, future=True, pool_pre_ping=True)
+    _engine = create_engine(DB_URL, future=True, pool_pre_ping=True)
     _Session = sessionmaker(bind=_engine, autoflush=False, autocommit=False, future=True)
 
 def create_all():
