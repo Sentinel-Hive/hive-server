@@ -20,7 +20,8 @@ Opting for RANDOM gives non-memorable but still URL-safe credentials (set SVH_CR
 # --------- wordlist loading -------------------------------------------------
 def _load_words() -> list[str]:
     """Load words from wordlist.txt (one per line). Falls back to a small set."""
-    p = Path(__file__).with_name("wordlist.txt")
+    # Prefer wordlist in the package's config folder (db/config/wordlist.txt)
+    p = Path(__file__).resolve().parent / "config" / "wordlist.txt"
     if p.exists():
         words = [w.strip().lower() for w in p.read_text(encoding="utf-8").splitlines()
                  if w.strip() and not w.startswith("#")]
