@@ -1,5 +1,7 @@
 import signal
 import sys
+import platform
+import time
 from typing import Dict
 from svh import notify
 from svh.commands.server import crud
@@ -51,7 +53,14 @@ def manage_service(
 
         signal.signal(signal.SIGINT, handle_exit)
         signal.signal(signal.SIGTERM, handle_exit)
-        signal.pause()
+        if platform.system().lower() == "windows":
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                _handle_exit(selected, config)
+        else:
+            signal.pause()
 
     elif action == "stop":
         for s in selected:
