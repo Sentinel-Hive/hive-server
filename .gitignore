@@ -39,6 +39,5 @@ migrations/versions/__pycache__/
 .svh_client_api.pid
 .svh_db_api.pid
 
-#configs
-config.yml
+# Database
 hive.sqlite

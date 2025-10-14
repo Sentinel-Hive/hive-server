@@ -1,6 +1,17 @@
 from __future__ import annotations
 import typer
-from .auth_users import login, logout, users_create, users_seed, users_insert, insp_tables, insp_schema, insp_show, insp_sql
+from svh.commands.server.auth_users import (
+    login,
+    logout,
+    users_create,
+    users_seed,
+    users_insert,
+    insp_tables,
+    insp_schema,
+    insp_show,
+    insp_sql,
+)
+
 
 def attach_auth_commands(app: typer.Typer) -> None:
     app.command("login")(login)

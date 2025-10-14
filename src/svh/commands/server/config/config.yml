@@ -1,0 +1,13 @@
+server:
+  host: "0.0.0.0"
+  client_port: 5167
+  db_port: 5169
+
+firewall:
+  ssh_service: False
+  close_by_default: True
+  allowed_ports: []
+
+database:
+  url: "sqlite:///./hive.sqlite"
+  admin_user: "Username"
