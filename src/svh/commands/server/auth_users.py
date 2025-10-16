@@ -10,10 +10,10 @@ app = typer.Typer(help="Server management and authenticated admin utilities.")
 # ---------- Config ----------
 def _base_url_opt():
     return typer.Option(
-        "http://127.0.0.1:5169",
+        "http://127.0.0.1:5167",
         "--base-url",
         envvar="SVH_API_BASE",
-        help="Base URL of the Client API (the app talks to this).",
+        help="Base URL of the Client API (should be http://127.0.0.1:5167). Requests are routed through the client API to the DB API as needed.",
     )
 
 
@@ -105,7 +105,7 @@ def _ensure_admin(base_url: str) -> str:
 # ---------- Commands: login/logout ----------
 @app.command(
     "login",
-    help="Login to the Client API and store a token (required for admin commands).",
+    help="Login to the Client API (port 5167) and store a token (required for admin commands).",
 )
 def login(
     user_id: str = typer.Option(..., "--u"),
@@ -165,7 +165,7 @@ def logout(base_url: str = _base_url_opt()):
 
 
 # ---------- Admin (proxied) users commands ----------
-users = typer.Typer(help="Admin-only user utilities (proxied through server).")
+users = typer.Typer(help="Admin-only user utilities (proxied through the Client API, which routes to the DB API as needed).")
 app.add_typer(users, name="users")
 
 
@@ -213,7 +213,7 @@ def users_insert(
 
 
 # ---------- Local DB inspect helpers (admin required even though local) ----------
-inspect = typer.Typer(help="Local DB inspection (admin login required).")
+inspect = typer.Typer(help="Local DB inspection (admin login required, routed through Client API).")
 app.add_typer(inspect, name="inspect")
 
 from svh.commands.db.session import get_engine, create_all
