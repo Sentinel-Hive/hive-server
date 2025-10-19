@@ -19,6 +19,7 @@ class LoginIn(BaseModel):
 class LoginOut(BaseModel):
     token: str
     user_id: str
+    is_admin: bool
 
 @router.post("/login", response_model=LoginOut)
 def login(body: LoginIn):
@@ -45,7 +46,7 @@ def login(body: LoginIn):
         # Issue new active token row
         token = make_token(user.user_id)
         s.add(AuthToken(user=user, token=token))
-        return LoginOut(token=token, user_id=user.user_id)
+        return LoginOut(token=token, user_id=user.user_id, is_admin=bool(user.is_admin))
 
 class LogoutIn(BaseModel):
     token: str

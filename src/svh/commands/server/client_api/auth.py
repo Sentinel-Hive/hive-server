@@ -19,6 +19,8 @@ class LoginIn(BaseModel):
 
 class LoginOut(BaseModel):
     token: str
+    user_id: str
+    is_admin: bool
 
 def _db_post(path: str, payload: dict) -> dict:
     url = get_db_api_base_for_client() + path
@@ -43,10 +45,10 @@ def login(body: LoginIn):
     out = _db_post("/auth/login", {"user_id": body.user_id, "password": body.password, "ttl": body.ttl or 3600})
     token = out.get("token")
     user_id = out.get("user_id")
-    if not token or not user_id:
+    if not token or user_id is None:
         raise HTTPException(502, "Bad response from DB API")
     cache.set(token, user_id, int(body.ttl or 3600))
-    return LoginOut(token=token)
+    return LoginOut(token=token, user_id=user_id, is_admin=bool(out.get("is_admin", False)))
 
 class LogoutIn(BaseModel):
     token: str | None = None
