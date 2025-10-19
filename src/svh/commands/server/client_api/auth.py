@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from svh.commands.server.util_config import get_db_api_base_for_client
 from .util import current_user
+from svh import notify
 
 from ...db.token import cache
 from ...db.models import User
@@ -58,6 +59,8 @@ def login(body: LoginIn):
 
     if not token or not user_id:
         raise HTTPException(502, "Bad response from DB API")
+    else:
+        notify.server(f"{user_id} logged in with {body.ttl}s TTL")
 
     cache.set(token, user_id, int(body.ttl or 3600))
 
@@ -65,12 +68,14 @@ def login(body: LoginIn):
 
 
 class LogoutIn(BaseModel):
+    user_id: str
     token: str | None = None
 
 
 @router.post("/logout")
 def logout(request: Request, body: LogoutIn | None = None):
     # Resolve token from body, header, or cookie
+    user_id = body.user_id if body and body.user_id else None
     token = body.token if body and body.token else None
     if not token:
         auth = request.headers.get("authorization") or ""
@@ -90,6 +95,9 @@ def logout(request: Request, body: LogoutIn | None = None):
 
     cache.delete(token)
     resp = JSONResponse({"ok": True})
+
+    notify.server(f"{user_id} with token:'{token}' logged out.")
+
     resp.delete_cookie("svh_token")
     return resp
 
