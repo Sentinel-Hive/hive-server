@@ -1,10 +1,12 @@
 from __future__ import annotations
-import json, os, urllib.request, urllib.error
+from typing import Optional
+import json, urllib.request, urllib.error
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from svh.commands.server.util_config import get_db_api_base_for_client
 from .util import current_user
+from svh import notify
 
 from ...db.token import cache
 from ...db.models import User
@@ -12,13 +14,18 @@ from ...db.models import User
 
 router = APIRouter()
 
+
 class LoginIn(BaseModel):
     user_id: str
     password: str
     ttl: int | None = 3600  # seconds
 
+
 class LoginOut(BaseModel):
     token: str
+    user_id: str
+    is_admin: bool
+
 
 def _db_post(path: str, payload: dict) -> dict:
     url = get_db_api_base_for_client() + path
@@ -38,23 +45,38 @@ def _db_post(path: str, payload: dict) -> dict:
     except urllib.error.URLError as e:
         raise HTTPException(502, f"DB API unavailable: {e}")
 
+
 @router.post("/login", response_model=LoginOut)
 def login(body: LoginIn):
-    out = _db_post("/auth/login", {"user_id": body.user_id, "password": body.password, "ttl": body.ttl or 3600})
-    token = out.get("token")
-    user_id = out.get("user_id")
+    res = _db_post(
+        "/auth/login",
+        {"user_id": body.user_id, "password": body.password, "ttl": body.ttl or 3600},
+    )
+
+    token: Optional[str] = res.get("token")
+    user_id: Optional[str] = res.get("user_id")
+    is_admin: Optional[bool] = res.get("is_admin")
+
     if not token or not user_id:
         raise HTTPException(502, "Bad response from DB API")
+    else:
+        notify.server(f"{user_id} logged in with {body.ttl}s TTL")
+
     cache.set(token, user_id, int(body.ttl or 3600))
-    return LoginOut(token=token)
+
+    return LoginOut(token=token, user_id=user_id, is_admin=bool(is_admin))
+
 
 class LogoutIn(BaseModel):
+    user_id: str
     token: str | None = None
+
 
 @router.post("/logout")
 def logout(request: Request, body: LogoutIn | None = None):
     # Resolve token from body, header, or cookie
-    token = (body.token if body and body.token else None)
+    user_id = body.user_id if body and body.user_id else None
+    token = body.token if body and body.token else None
     if not token:
         auth = request.headers.get("authorization") or ""
         if auth.lower().startswith("bearer "):
@@ -70,16 +92,21 @@ def logout(request: Request, body: LogoutIn | None = None):
     except HTTPException:
         # even if DB fails, we still clear local cache so user is logged out here
         pass
-    
+
     cache.delete(token)
     resp = JSONResponse({"ok": True})
+
+    notify.server(f"{user_id} with token:'{token}' logged out.")
+
     resp.delete_cookie("svh_token")
     return resp
+
 
 @router.get("/check")
 def check(token: str):
     # ACTIVE only if present in in-memory cache (restart/log out → revoked)
     return {"status": "active"} if cache.get(token) else {"status": "revoked"}
+
 
 @router.get("/whoami")
 def whoami(user: User = Depends(current_user)):
