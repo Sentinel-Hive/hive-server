@@ -1,4 +1,9 @@
 from __future__ import annotations
+from .websocket.routes import router as websocket_router
+from .websocket.hub import websocket_hub
+from .health import router as health_router
+from .users import router as users_router
+from .auth import router as auth_router
 from contextlib import asynccontextmanager
 import os
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,13 +33,11 @@ if DEV_CORS:
         allow_headers=["*"],
     )
 
-from .auth import router as auth_router
-from .users import router as users_router
-from .health import router as health_router
 
 app.include_router(health_router, prefix="/health", tags=["health"])
 app.include_router(users_router,  prefix="/users",  tags=["users"])
 app.include_router(auth_router,   prefix="/auth",   tags=["auth"])
+app.include_router(websocket_router, tags=["websocket"])
 
 
 @app.post("/ingest")
@@ -61,3 +64,14 @@ async def ingest(request: Request, files: Optional[List[UploadFile]] = File(None
     except Exception as e:
         notify.error(f"Error processing ingestion request: {e}")
         return {"status": "error", "detail": str(e)}
+
+
+# Testign to see if i can broadcast
+
+
+@app.get("/broadcast-test")
+@app.post("/broadcast-test")
+async def broadcast_test():
+    message = {"type": "popup", "text": "Hello from the backend!"}
+    await websocket_hub.broadcast(message)
+    return {"status": "sent", "message": message}

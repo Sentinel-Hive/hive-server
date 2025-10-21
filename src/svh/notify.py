@@ -17,6 +17,7 @@ FIREWALL_TAG = typer.style("[FIREWALL]", fg=typer.colors.MAGENTA, bold=True)
 DB_TAG = typer.style("[SERVER]", fg=typer.colors.BLUE, bold=True)
 ERROR_TAG = typer.style("[ERROR]", fg=typer.colors.RED, bold=True)
 INFO_TAG = typer.style("[INFO]", fg=typer.colors.YELLOW, bold=True)
+WEBSOCKET_TAG = typer.style("[WEBSOCKET]", fg=typer.colors.GREEN, bold=True)
 
 
 def _write_log(tag: str, msg: str):
@@ -49,3 +50,8 @@ def error(msg: str):
 def info(msg: str):
     typer.echo(f"{INFO_TAG} {msg}")
     _write_log("INFO", msg)
+
+
+def websocket(msg: str):
+    typer.echo(f"{WEBSOCKET_TAG} {msg}")
+    _write_log("WEBSOCKET", msg)
