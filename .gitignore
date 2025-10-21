@@ -24,6 +24,9 @@ venv/
 # Logs
 *.log
 
+# Datasets
+datasets/
+
 # Alembic
 migrations/versions/*.pyc
 migrations/versions/__pycache__/

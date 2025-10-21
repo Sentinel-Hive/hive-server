@@ -11,6 +11,8 @@ class DBSettings:
     url: str = os.getenv("SVH_DB_URL", "sqlite:///./hive.sqlite")
     # Dev flags (used by server for CORS, etc.)
     dev_cors: bool = os.getenv("SVH_DEV_CORS", "true").lower() in ("1","true","yes")
+    #Dataset folder path (default)
+    datasets_folder: str = os.getenv("SVH_DATASETS_FOLDER", "datasets")
 
 def get_settings() -> DBSettings:
     return DBSettings()
