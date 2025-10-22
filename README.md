@@ -30,6 +30,11 @@ source .venv/bin/activate
 pip install --editable .
 ```
 
+**4. Install dependencies**
+```bash
+pip install httpx
+```
+
 ### Windows (PowerShell)
 
 **1. Clone repository**
@@ -51,6 +56,11 @@ python -m venv .venv
 **4. Install in editable (dev) mode**
 ```bash
 pip install --editable .
+```
+
+**5. Install dependencies**
+```bash
+pip install httpx
 ```
 
 ---
@@ -86,3 +96,64 @@ svh server stop -s db
 ```bash
 # TODO
 ```
+
+---
+
+## Testing Data Ingestion Endpoint
+
+The data ingestion endpoint accepts JSON data and stores it in the database.
+
+### Prerequisites
+1. Start both servers:
+```bash
+svh server start -d
+```
+
+2. Login to create a session (default credentials: admin/admin):
+```bash
+svh server login --u admin --p admin
+```
+
+### Test Without Authentication (Quick Test)
+
+Use the test endpoint that doesn't require authentication:
+
+```bash
+curl -X POST http://localhost:5167/data/test \
+  -H "Content-Type: application/json" \
+  -d '{"test": "data", "number": 123, "nested": {"key": "value"}}'
+```
+
+**Expected Response:**
+```json
+{"success": true, "id": 1}
+```
+
+### Test With Admin Authentication (Production Endpoint)
+
+**Step 1: Get an authentication token**
+```bash
+curl -X POST http://localhost:5167/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "admin", "password": "admin"}'
+```
+
+**Response:**
+```json
+{"token": "admin.1760992694.bca67429b758d0398a3bfcc2fef00519f61de07c179021176c500011d1008f47"}
+```
+
+**Step 2: Use the token to store data**
+```bash
+curl -X POST http://localhost:5167/data \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer admin.1760992694.bca67429b758d0398a3bfcc2fef00519f61de07c179021176c500011d1008f47" \
+  -d '{"authenticated": true, "secure": "data", "admin_test": "success"}'
+```
+
+**Expected Response:**
+```json
+{"success": true, "id": 2}
+```
+
+### Architecture Flow

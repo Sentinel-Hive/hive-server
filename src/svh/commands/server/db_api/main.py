@@ -13,10 +13,8 @@ from svh.commands.db.models import AuthToken
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1) Ensure tables exist before anything else
     create_all()
 
-    # 2) Best effort: revoke any non-revoked tokens from prior run
     try:
         with session_scope() as s:
             s.execute(
@@ -24,10 +22,7 @@ async def lifespan(app: FastAPI):
                 .where(AuthToken.revoked_at.is_(None))
                 .values(revoked_at=datetime.utcnow())
             )
-            # session_scope() handles commit
     except OperationalError:
-        # If the table truly didn’t exist yet or any race, skip silently.
-        # Next request has a fully created schema anyway.
         pass
 
     yield
@@ -49,5 +44,7 @@ def metadata():
 
 from .auth import router as auth_router
 from .users import router as users_router
+from .data import router as data_router
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(users_router, prefix="/users", tags=["users"])
+app.include_router(data_router, tags=["data"])

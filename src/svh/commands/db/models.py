@@ -44,3 +44,10 @@ class Event(Base):
 
     def __repr__(self):
         return f"<Event(id={self.id}, type='{self.event_type}', timestamp='{self.timestamp}')>"
+
+class DataStore(Base):
+    __tablename__ = "data_store"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    content = Column(JSON, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
