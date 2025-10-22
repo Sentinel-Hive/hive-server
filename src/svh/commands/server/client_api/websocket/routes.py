@@ -3,7 +3,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import TypeAdapter, ValidationError
 from .hub import websocket_hub
 from .schema import ClientMessage, PopupMessage, ErrorMessage
-from svh import notify  # ← use your colored logger
+from svh import notify
+from datetime import datetime, timezone
+import uuid
+
 
 router = APIRouter()
 
@@ -32,32 +35,45 @@ async def websocket_endpoint(websocket: WebSocket):
                 raw = await websocket.receive_json()
                 notify.websocket(f"recv raw: {raw!r}")
 
+                # ---- short-circuit dev_alert (not part of ClientMessage union) ----
+                if isinstance(raw, dict) and raw.get("type") == "dev_alert":
+                    alert = {
+                        "type": "alert",
+                        "id": str(uuid.uuid4()),
+                        "title": (raw.get("title") or "Test Alert").strip(),
+                        # critical|high|medium|low
+                        "severity": (raw.get("severity") or "medium").lower(),
+                        "source": raw.get("source") or "dev",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "description": raw.get("description"),
+                        "tags": raw.get("tags") or [],
+                    }
+                    await websocket_hub.broadcast(alert)
+                    notify.websocket("broadcasted alert from dev_alert")
+                    continue
+                # -------------------------------------------------------------------
+
+                # Existing validation for hello/dev_popup, unchanged
                 try:
                     msg = client_msg_adapter.validate_python(raw)
                     notify.websocket(f"validated msg: {msg}")
 
                     if msg.type == "hello":
-                        # Respond only to this websocket
                         await websocket.send_json(
                             PopupMessage(
-                                type="popup", text=f"Hello {msg.client}!"
-                            ).model_dump()
+                                type="popup", text=f"Hello {msg.client}!").model_dump()
                         )
 
                     elif msg.type == "dev_popup":
-                        # Broadcast to all connected clients
                         await websocket_hub.broadcast(
                             PopupMessage(
-                                type="popup", text=f"[Broadcast] {msg.text}"
-                            ).model_dump()
+                                type="popup", text=f"[Broadcast] {msg.text}").model_dump()
                         )
 
                     else:
                         await websocket.send_json(
                             PopupMessage(
-                                type="popup",
-                                text=f"Unknown message type: {msg.type}",
-                            ).model_dump()
+                                type="popup", text=f"Unknown message type: {msg.type}").model_dump()
                         )
 
                 except ValidationError as ve:

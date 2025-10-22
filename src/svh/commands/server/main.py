@@ -11,6 +11,9 @@ from svh.commands.server.helper import load_config
 from svh.commands.server.cli_auth import attach_auth_commands
 from svh.commands.server.config import config, state
 
+from typing import Optional, List
+
+
 app = typer.Typer(help="Server management commands")
 
 app.add_typer(config.config_app, name="config")
@@ -89,4 +92,61 @@ def broadcast(
 
     except urllib.error.URLError as e:
         notify.error(f"Broadcast failed: {e.reason}")
+        raise typer.Exit(code=1)
+
+
+@app.command(help="Send a structured alert to all connected clients (via /alerts/notify).")
+def alert(
+    title: str = typer.Argument(..., help="Alert title"),
+    severity: str = typer.Option(
+        "medium", "--severity", "-s", help="critical|high|medium|low"),
+    source: str = typer.Option(
+        "server", "--source", help="Origin (e.g., api-gw, db-core)"),
+    description: Optional[str] = typer.Option(
+        None, "--desc", help="Longer text"),
+    tags: List[str] = typer.Option(
+        [], "--tag", help="Repeatable: --tag api --tag errors"),
+    base_url: str = typer.Option(
+        "http://127.0.0.1:5167", "--base-url", "-b", help="Client API base URL"),
+    key: Optional[str] = typer.Option(
+        None, "--key", help="Notify key (or env SVH_NOTIFY_KEY)"),
+):
+    sev = severity.lower()
+    if sev not in {"critical", "high", "medium", "low"}:
+        notify.error("Invalid --severity. Use: critical|high|medium|low")
+        raise typer.Exit(code=1)
+
+    payload = {
+        "title": title,
+        "severity": sev,
+        "source": source,
+        "description": description,
+        "tags": tags,
+    }
+
+    url = base_url.rstrip("/") + "/alerts/notify"
+    headers = {"Content-Type": "application/json"}
+    key = key or os.getenv("SVH_NOTIFY_KEY")
+    if key:
+        headers["X-Notify-Key"] = key
+
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, headers=headers, method="POST")
+
+    notify.server(f"Sending alert → {url}")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            out = json.loads(resp.read().decode("utf-8"))
+            if out.get("ok"):
+                notify.server(f"Alert sent (id={out.get('id')})")
+            else:
+                notify.error(f"Server response: {out}")
+                raise typer.Exit(code=1)
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="ignore")
+        notify.error(f"HTTP {e.code} {e.reason} — {detail}")
+        raise typer.Exit(code=1)
+    except urllib.error.URLError as e:
+        notify.error(f"Failed to reach API: {e.reason}")
         raise typer.Exit(code=1)
