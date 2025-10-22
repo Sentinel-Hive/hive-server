@@ -1,28 +1,34 @@
-from pydantic import BaseModel, Field
-from typing import Any, Literal, Optional
-
-# Client -> Server
+from pydantic import BaseModel
+from typing import Literal, Union
 
 
-class ClientHello(BaseModel):
-    type: Literal["hello"] = "hello"
-    client: Optional[str] = None
+# --- Client → Server messages ---
+
+class HelloMessage(BaseModel):
+    type: Literal["hello"]
+    client: str
 
 
-class ClientDevPopup(BaseModel):
-    type: Literal["dev_popup"] = "dev_popup"
-    text: str = Field(default="")
-
-
-ClientMessage = ClientHello | ClientDevPopup  # Pydantic v2 union
-
-
-# Server -> Client
-class ServerMessage(BaseModel):
-    type: Literal["popup"] = "popup"
+class DevPopupMessage(BaseModel):
+    type: Literal["dev_popup"]
     text: str
 
 
-class Echo(BaseModel):
-    type: Literal["echo"] = "echo"
-    payload: Any
+# Union of possible client messages
+ClientMessage = Union[HelloMessage, DevPopupMessage]
+
+
+# --- Server → Client messages ---
+
+class PopupMessage(BaseModel):
+    type: Literal["popup"]
+    text: str
+
+
+class ErrorMessage(BaseModel):
+    type: Literal["error"]
+    detail: str
+
+
+# Union of possible server messages
+ServerMessage = Union[PopupMessage, ErrorMessage]

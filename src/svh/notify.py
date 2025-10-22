@@ -14,10 +14,10 @@ LOG_FILE = LOG_DIR / f".svh_server_{timestamp}.log"
 # Styled tags
 SERVER_TAG = typer.style("[SERVER]", fg=typer.colors.GREEN, bold=True)
 FIREWALL_TAG = typer.style("[FIREWALL]", fg=typer.colors.MAGENTA, bold=True)
-DB_TAG = typer.style("[SERVER]", fg=typer.colors.BLUE, bold=True)
+DB_TAG = typer.style("[DATABASE]", fg=typer.colors.BLUE, bold=True)
 ERROR_TAG = typer.style("[ERROR]", fg=typer.colors.RED, bold=True)
 INFO_TAG = typer.style("[INFO]", fg=typer.colors.YELLOW, bold=True)
-WEBSOCKET_TAG = typer.style("[WEBSOCKET]", fg=typer.colors.GREEN, bold=True)
+WEBSOCKET_TAG = typer.style("[WEBSOCKET]", fg=typer.colors.CYAN, bold=True)
 
 
 def _write_log(tag: str, msg: str):

@@ -13,6 +13,8 @@ import platform
 from datetime import datetime
 from svh import notify
 
+from fastapi import Body, HTTPException, Header
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -75,3 +77,22 @@ async def broadcast_test():
     message = {"type": "popup", "text": "Hello from the backend!"}
     await websocket_hub.broadcast(message)
     return {"status": "sent", "message": message}
+
+
+@app.post("/notify")
+async def notify_popup(
+    body: dict = Body(...),
+    x_notify_key: str | None = Header(default=None),
+):
+    # Optional shared secret: if SVH_NOTIFY_KEY is set in the env, require it
+    required = os.getenv("SVH_NOTIFY_KEY")
+    if required and x_notify_key != required:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    text = str(body.get("text", "")).strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="`text` is required")
+
+    message = {"type": "popup", "text": text}
+    await websocket_hub.broadcast(message)
+    return {"ok": True}
