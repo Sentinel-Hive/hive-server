@@ -83,6 +83,16 @@ async def broadcast_test():
     return {"status": "sent", "message": message}
 
 
+@app.post("/notify")
+async def notify_popup(body: dict = Body(...)):
+    text = str(body.get("text", "")).strip()
+    if not text:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="`text` is required")
+    await websocket_hub.broadcast({"type": "popup", "text": text})
+    return {"ok": True}
+
+
 @app.post("/alerts/notify")
 async def alerts_notify(
     body: AlertIn = Body(...),
@@ -95,30 +105,3 @@ async def alerts_notify(
     alert = AlertOut(**body.model_dump())
     await websocket_hub.broadcast(alert.model_dump())
     return {"ok": True, "id": alert.id, "timestamp": alert.timestamp}
-
-
-@app.post("/alerts/notify")
-async def alerts_notify(
-    body: dict = Body(...),
-    x_notify_key: str | None = Header(default=None),
-):
-    required = os.getenv("SVH_NOTIFY_KEY")
-    if required and x_notify_key != required:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
-    title = (body.get("title") or "").strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="`title` is required")
-
-    alert = {
-        "type": "alert",
-        "id": str(uuid.uuid4()),
-        "title": title,
-        "severity": (body.get("severity") or "medium").lower(),
-        "source": body.get("source") or "server",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "description": body.get("description"),
-        "tags": body.get("tags") or [],
-    }
-    await websocket_hub.broadcast(alert)
-    return {"ok": True}

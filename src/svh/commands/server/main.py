@@ -55,44 +55,50 @@ def list():
     crud.list_servers()
 
 
-@app.command(help='Broadcast a popup to all connected clients via the client API /notify endpoint.')
+@app.command(help='Broadcast to clients (popup or fallback to alert).')
 def broadcast(
-    message: str = typer.Argument(..., help='Text to show in the popup'),
-    base_url: str = typer.Option(
-        "http://127.0.0.1:5167", "--base-url", "-b", help="Client API base URL"),
-    key: str | None = typer.Option(
-        None, "--key", help="Notify key; defaults to $SVH_NOTIFY_KEY if set"),
+    message: str = typer.Argument(...),
+    base_url: str = typer.Option("http://127.0.0.1:5167", "--base-url", "-b"),
+    key: str | None = typer.Option(None, "--key"),
 ):
-    url = base_url.rstrip("/") + "/notify"
-    headers = {"Content-Type": "application/json"}
+    import json
+    import os
+    import urllib.request
+    import urllib.error
+    from svh import notify
 
-    # Allow --key or environment variable
+    endpoints = ["/notify", "/alerts/notify"]  # try popup, then alert
+    headers = {"Content-Type": "application/json"}
     key = key or os.getenv("SVH_NOTIFY_KEY")
     if key:
         headers["X-Notify-Key"] = key
 
-    data = json.dumps({"text": message}).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=data, headers=headers, method="POST")
+    for ep in endpoints:
+        url = base_url.rstrip("/") + ep
+        if ep == "/notify":
+            payload = {"text": message}
+        else:
+            payload = {"title": message, "severity": "medium", "source": "cli"}
 
-    notify.server(f"Broadcasting to {url}")
-    try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-            if payload.get("ok"):
-                notify.server("Broadcast sent.")
-            else:
-                notify.error(f"Broadcast response: {payload}")
-                raise typer.Exit(code=1)
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=data, headers=headers, method="POST")
+        notify.server(f"Broadcasting to {url}")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                out = json.loads(resp.read().decode("utf-8"))
+                if out.get("ok"):
+                    notify.server("Broadcast sent.")
+                    return
+                else:
+                    notify.error(f"Server response: {out}")
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="ignore")
+            notify.error(f"HTTP {e.code} {e.reason} — {detail}")
+        except urllib.error.URLError as e:
+            notify.error(f"Failed to reach API: {e.reason}")
 
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="ignore")
-        notify.error(f"Broadcast failed: HTTP {e.code} {e.reason} — {detail}")
-        raise typer.Exit(code=1)
-
-    except urllib.error.URLError as e:
-        notify.error(f"Broadcast failed: {e.reason}")
-        raise typer.Exit(code=1)
+    raise typer.Exit(code=1)
 
 
 @app.command(help="Send a structured alert to all connected clients (via /alerts/notify).")
