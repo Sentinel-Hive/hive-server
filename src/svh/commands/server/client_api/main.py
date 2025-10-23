@@ -32,9 +32,7 @@ if DEV_CORS:
 from .auth import router as auth_router
 from .users import router as users_router
 from .health import router as health_router
-from .datasets import router as datasets_router
 
 app.include_router(health_router, prefix="/health", tags=["health"])
 app.include_router(users_router,  prefix="/users",  tags=["users"])
 app.include_router(auth_router,   prefix="/auth",   tags=["auth"])
-app.include_router(datasets_router, prefix="/datasets", tags=["datasets"])
