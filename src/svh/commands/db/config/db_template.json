@@ -2,7 +2,7 @@
   "tables": [
     "users",
     "auth_tokens",
-    "events"
+    "datasets"
   ],
   "settings": {
     "echo": false,

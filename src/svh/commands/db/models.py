@@ -30,17 +30,16 @@ class AuthToken(Base):
     user: Mapped["User"] = relationship(back_populates="tokens")
     __table_args__ = (UniqueConstraint("token", name="uq_auth_tokens_token"),)
 
-class Event(Base):
+class Dataset(Base):
     """
-    Generic event table for all types of network/security/application events.
-    Further expand next sprint with better idea of exactly what we want to log/store for analytics/alerts.
+    Points to the datasets folder which holds the network JSON files.
     """
-    __tablename__ = "events"
+    __tablename__ = "datasets"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    event_type = Column(String(100), nullable=False, index=True)
-    timestamp = Column(DateTime, default=func.now(), nullable=False, index=True)
-    source = Column(String(100), nullable=True, index=True)
-    details = Column(JSON, nullable=True)
+    dataset_name = Column(String(100), nullable=False, index=True)
+    dataset_path = Column(String(255), nullable=False, index=True)
+    added_at = Column(DateTime, default=func.now(), nullable=False, index=True)
+    __table_args__ = (UniqueConstraint("dataset_name", name="uq_datasets_dataset_name"),)
 
     def __repr__(self):
-        return f"<Event(id={self.id}, type='{self.event_type}', timestamp='{self.timestamp}')>"
+        return f"<Dataset(id={self.id}, name='{self.dataset_name}', path='{self.dataset_path}', added_at='{self.added_at}')>"
