@@ -141,4 +141,3 @@ curl -X POST http://localhost:5167/data \
 {"success": true, "id": 2}
 ```
 
-### Architecture Flow
