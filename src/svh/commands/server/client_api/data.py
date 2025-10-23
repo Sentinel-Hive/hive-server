@@ -144,38 +144,3 @@ async def store_data(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to store data: {str(e)}"
         )
-
-
-@router.post("/data/test", status_code=status.HTTP_201_CREATED)
-async def store_data_test(data: Dict[str, Any]):
-    """
-    Store JSON data in the database (TEST - NO AUTH).
-    """
-    if not data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No data provided"
-        )
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{DB_API_URL}/data/store",
-                json=data,
-                timeout=10.0
-            )
-            
-            if response.status_code != 201:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="DB API failed to store data"
-                )
-            
-            result = response.json()
-            return {"success": True, "id": result["id"]}
-            
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to store data: {str(e)}"
-        )

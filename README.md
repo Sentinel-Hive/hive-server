@@ -114,21 +114,6 @@ svh server start -d
 svh server login --u admin --p admin
 ```
 
-### Test Without Authentication (Quick Test)
-
-Use the test endpoint that doesn't require authentication:
-
-```bash
-curl -X POST http://localhost:5167/data/test \
-  -H "Content-Type: application/json" \
-  -d '{"test": "data", "number": 123, "nested": {"key": "value"}}'
-```
-
-**Expected Response:**
-```json
-{"success": true, "id": 1}
-```
-
 ### Test With Admin Authentication (Production Endpoint)
 
 **Step 1: Get an authentication token**
