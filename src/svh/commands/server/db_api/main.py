@@ -3,13 +3,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI
-from sqlalchemy import select, update as sa_update, delete as sa_delete
+from sqlalchemy import update as sa_update
 from sqlalchemy.exc import OperationalError
-from ...db.session import session_scope
-from ...db.models import AuthToken
 import platform
 from svh.commands.db.session import create_all, session_scope
 from svh.commands.db.models import AuthToken
+
+from .auth import router as auth_router
+from .users import router as users_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,7 +29,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
+
 app = FastAPI(title="SVH DB API", lifespan=lifespan)
+
 
 @app.get("/health")
 def health():
