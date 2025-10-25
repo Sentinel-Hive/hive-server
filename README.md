@@ -86,3 +86,9 @@ svh server stop -s db
 ```bash
 # TODO
 ```
+
+### Firewall
+You can check firewall status with this command:
+```bash
+svh server status
+```
