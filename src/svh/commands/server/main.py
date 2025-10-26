@@ -6,6 +6,7 @@ from svh.commands.server.helper import load_config
 from svh.commands.server.cli_auth import attach_auth_commands
 from svh.commands.server.config import config, state
 from svh.commands.server.firewall import firewall_ssh_status, configure_firewall_from_config
+from svh import notify  # use centralized notifier
 
 app = typer.Typer(help="Server management commands")
 
@@ -25,7 +26,7 @@ def start(
     ),
     detach: bool = typer.Option(False, "--detach", "-d", help="Run in detached mode"),
     configure_firewall: bool = typer.Option(
-        True, "--configure-firewall/--no-configure-firewall", help="Configure firewall from config"
+        False, "--configure-firewall/--no-configure-firewall", help="Configure firewall from config"
     ),
 ):
     config_path = config or DEFAULT_CONFIG_PATH
@@ -37,8 +38,10 @@ def start(
         try:
             configure_firewall_from_config(str(config_path))
         except Exception as e:
-            typer.secho(f"⚠ Failed to configure firewall: {e}", fg=typer.colors.YELLOW)
-            typer.echo("Continuing with service start...\n")
+            notify.error(f"Failed to configure firewall: {e}")
+            notify.firewall("Continuing with service start...")
+    else:
+        notify.firewall("Skipping firewall configuration (use --configure-firewall to apply config).")
     
     manage_service("start", service, cfg, detach=detach)
 
@@ -66,34 +69,52 @@ def status(
 ):
     """Check firewall and SSH configuration status."""
     config_path = config or DEFAULT_CONFIG_PATH
-    
+
     if not config_path.exists():
-        typer.secho(f"⚠ Config file not found: {config_path}", fg=typer.colors.YELLOW)
-        typer.echo("Running status check without config validation...\n")
+        notify.error(f"Config file not found: {config_path}")
+        notify.firewall("Running status check without config validation...")
         result = firewall_ssh_status(None)
     else:
         result = firewall_ssh_status(str(config_path))
-    
-    typer.echo(f"OS: {result['os']}")
-    typer.echo(f"SSH Port: {result['ssh_port']}")
-    typer.echo(f"Firewall Enabled: {result['details'].get('firewall_enabled')}")
-    typer.echo(f"SSH Running: {result['details'].get('ssh_running')}")
-    typer.echo(f"SSH Port Listening: {result['details'].get('ssh_port_listening')}")
-    typer.echo(f"Allowed Ports: {result['details'].get('allowed_ports')}")
-    typer.echo(f"Defaults: {result['details'].get('defaults')}\n")
-    
+
+    # concise summary routed through notify
+    notify.firewall(f"OS: {result['os']}")
+    notify.firewall(f"SSH Port: {result['ssh_port']}")
+    notify.firewall(f"Firewall Enabled: {result['details'].get('firewall_enabled')}")
+    notify.firewall(f"SSH Running: {result['details'].get('ssh_running')}")
+    notify.firewall(f"SSH Port Listening: {result['details'].get('ssh_port_listening')}")
+    notify.firewall(f"Allowed Ports: {result['details'].get('allowed_ports')}")
+    notify.firewall(f"Defaults: {result['details'].get('defaults')}")
+
     if result["ok"]:
-        typer.secho("✓ Server firewall and SSH are configured correctly", fg=typer.colors.GREEN)
+        notify.firewall("✓ Server firewall and SSH are configured correctly")
     else:
-        typer.secho("✗ Issues detected:", fg=typer.colors.RED)
+        notify.error("Issues detected with firewall or SSH configuration")
         if not result['details'].get('firewall_enabled'):
-            typer.echo("  • Firewall is not enabled. Run: sudo ufw enable")
+            notify.error("Firewall is not enabled. Run: sudo ufw enable")
         if not result['details'].get('ssh_running'):
-            typer.echo("  • SSH service is not running")
+            notify.error("SSH service is not running")
         if not result['details'].get('ssh_port_listening'):
-            typer.echo("  • SSH port is not listening")
+            notify.error("SSH port is not listening")
         if config_path.exists():
-            typer.echo(f"  • Run 'svh server start -c {config_path}' to configure firewall from config")
+            notify.firewall(f"Run 'svh server start --configure-firewall -c {config_path}' to configure firewall from config")
+        raise typer.Exit(1)
+
+
+@app.command()
+def firewall(
+    config: Path = typer.Option(
+        None, "--config", "-c", help="Path to configuration file", exists=True
+    ),
+):
+    """Configure firewall and SSH from config.yml (can be run while server is running)."""
+    config_path = config or DEFAULT_CONFIG_PATH
+    
+    try:
+        result = configure_firewall_from_config(str(config_path))
+        notify.firewall(f"Firewall configured successfully. SSH port: {result['ssh']['port']}")
+    except Exception as e:
+        notify.error(f"Failed to configure firewall: {e}")
         raise typer.Exit(1)
 
 

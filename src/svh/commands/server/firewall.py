@@ -4,6 +4,7 @@ from svh import notify
 from typing import Any, Dict, Iterable, Set, Tuple
 import json
 from typing import Optional
+import shutil  # added to resolve ufw path
 
 try:
     import yaml
@@ -280,8 +281,22 @@ def _start_ssh_windows() -> None:
     subprocess.run(["powershell", ps_script], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def _linux_status(ssh_port: int) -> Dict[str, Any]:
-    proc = subprocess.run(["ufw", "status", "verbose"], capture_output=True, text=True)
-    out = proc.stdout or ""
+    # Find ufw binary explicitly (non-root PATH often lacks /usr/sbin)
+    ufw_path = shutil.which("ufw") or "/usr/sbin/ufw"
+    try:
+        # Use sudo to read ufw status
+        proc = subprocess.run(["sudo", ufw_path, "status", "verbose"], capture_output=True, text=True, check=False)
+        out = proc.stdout or ""
+    except FileNotFoundError:
+        notify.error("ufw not found on PATH. Ensure ufw is installed and available (e.g., /usr/sbin/ufw).")
+        return {
+            "firewall_enabled": False,
+            "defaults": "unknown",
+            "allowed_ports": [],
+            "ssh_running": _linux_is_service_active("sshd") or _linux_is_service_active("ssh"),
+            "ssh_port_listening": False,
+        }
+
     enabled = "Status: active" in out
     defaults = "deny (incoming)" in out and "allow (outgoing)" in out
 
@@ -291,7 +306,7 @@ def _linux_status(ssh_port: int) -> Dict[str, Any]:
         if not line or "/" not in line:
             continue
         parts = line.split()
-        token = parts[0]  
+        token = parts[0]
         if "/" in token:
             try:
                 p, pr = token.split("/", 1)
