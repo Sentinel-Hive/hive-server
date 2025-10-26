@@ -72,15 +72,7 @@ async def ingest(request: Request, files: Optional[List[UploadFile]] = File(None
         return {"status": "error", "detail": str(e)}
 
 
-# Testign to see if i can broadcast
 
-
-@app.get("/broadcast-test")
-@app.post("/broadcast-test")
-async def broadcast_test():
-    message = {"type": "popup", "text": "Hello from the backend!"}
-    await websocket_hub.broadcast(message)
-    return {"status": "sent", "message": message}
 
 
 @app.post("/notify")
