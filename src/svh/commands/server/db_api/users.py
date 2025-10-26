@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from ...db.session import session_scope, get_engine
 from ...db.seed import create_user as _create_user, seed_users as _seed_users  # tuple-returning creator
+from ...db.seed import upsert_user as _upsert_user
+from ...db.security import gen_password
 
 router = APIRouter()
 
@@ -17,7 +19,7 @@ class CreateUserOut(BaseModel):
 @router.post("/create", response_model=CreateUserOut)
 def create_user(admin: bool = False):
     """Create a single user (admin or non-admin)."""
-    with session_scope() as s:  # type: Session
+    with session_scope() as s:
         uid, pwd, is_admin = _create_user(s, admin)
         return CreateUserOut(user_id=uid, password=pwd, is_admin=is_admin)
 
@@ -45,3 +47,14 @@ def insert_row(table_name: str, body: InsertRowIn):
     with engine.begin() as conn:
         conn.execute(insert(tbl).values(**body.values))
     return {"ok": True}
+
+
+@router.post("/reset/{user_id}", response_model=CreateUserOut)
+def reset_user(user_id: str, is_admin: bool = False):
+    """Reset (or create) a user with a new generated password and return the cleartext password.
+    This endpoint should be protected at the client API level (require admin)."""
+    with session_scope() as s:
+        pwd = gen_password()
+        out = _upsert_user(s, user_id, pwd, is_admin)
+        # upsert_user returns a dict with password equal to provided pwd
+        return CreateUserOut(user_id=out["user_id"], password=out["password"], is_admin=out["is_admin"])

@@ -9,7 +9,11 @@ from .token import make_token, cache
 app = typer.Typer(help="Auth utilities")
 
 @app.command(help="Login and produce a token (CLI)")
-def login(user_id: str, password: str, ttl: int = 3600):
+def login(
+    user_id: str = typer.Option(..., "--user", "-u", "--u", "-user"),
+    password: str = typer.Option(..., "--pass", "-p", "--p", "-pass"),
+    ttl: int = typer.Option(3600, "--ttl", "-t", "--t", "-ttl"),
+):
     with session_scope() as s:
         user = s.scalar(select(User).where(User.user_id == user_id))
         if not user or not verify_password(password, user.salt_hex, user.pass_hash):

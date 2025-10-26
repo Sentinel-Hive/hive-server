@@ -36,6 +36,16 @@ class InsertRowIn(BaseModel):
     values: dict
 
 
+@router.post("/reset/{user_id}", response_model=CreateUserOut)
+def reset_user(user_id: str, is_admin: bool = False, _: object = Depends(require_admin)):
+    """Reset a user's password (admin only). Returns the new cleartext password."""
+    path = f"/users/reset/{urllib.parse.quote(user_id)}"
+    if is_admin:
+        path += "?is_admin=true"
+    out = _db_post(path)
+    return CreateUserOut(**out)
+
+
 @router.post("/create", response_model=CreateUserOut)
 def create_user(admin: bool = False, _: object = Depends(require_admin)):
         out = _db_post("/users/create" + (f"?admin=true" if admin else ""))
