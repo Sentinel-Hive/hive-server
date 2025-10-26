@@ -18,6 +18,7 @@ dependencies = [
     "pyyaml",
     "python-multipart",
     "psutil",
+    "httpx",
 ]
 
 [project.scripts]

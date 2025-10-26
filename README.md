@@ -29,12 +29,6 @@ source .venv/bin/activate
 ```bash
 pip install --editable .
 ```
-
-**4. Install dependencies**
-```bash
-pip install httpx
-```
-
 ### Windows (PowerShell)
 
 **1. Clone repository**

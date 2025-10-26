@@ -6,10 +6,11 @@ from sqlalchemy import text, select
 from datetime import datetime
 import json
 import httpx
+from svh.commands.server.util_config import get_db_api_base_for_client
 
 router = APIRouter()
 
-DB_API_URL = "http://localhost:5169"
+DB_API_URL = get_db_api_base_for_client()
 
 
 async def verify_admin_token(authorization: Optional[str] = Header(None)):
