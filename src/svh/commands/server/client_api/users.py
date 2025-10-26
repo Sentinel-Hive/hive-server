@@ -27,6 +27,42 @@ def _db_post(path: str, payload: dict | None = None) -> dict:
     except urllib.error.URLError as e:
       raise HTTPException(502, f"DB API unavailable: {e}")
 
+
+def _db_get(path: str):
+        base = get_db_api_base_for_client()
+        url = base + path
+        req = urllib.request.Request(url, method="GET")
+        try:
+            with urllib.request.urlopen(req) as r:
+                    raw = r.read().decode("utf-8")
+                    return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as e:
+            try:
+                    msg = e.read().decode("utf-8")
+            except Exception:
+                    msg = e.reason
+            raise HTTPException(e.code, msg)
+        except urllib.error.URLError as e:
+            raise HTTPException(502, f"DB API unavailable: {e}")
+
+
+def _db_delete(path: str):
+    base = get_db_api_base_for_client()
+    url = base + path
+    req = urllib.request.Request(url, method="DELETE")
+    try:
+        with urllib.request.urlopen(req) as r:
+            raw = r.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        try:
+            msg = e.read().decode("utf-8")
+        except Exception:
+            msg = e.reason
+        raise HTTPException(e.code, msg)
+    except urllib.error.URLError as e:
+        raise HTTPException(502, f"DB API unavailable: {e}")
+
 class CreateUserOut(BaseModel):
     user_id: str
     password: str
@@ -34,6 +70,13 @@ class CreateUserOut(BaseModel):
 
 class InsertRowIn(BaseModel):
     values: dict
+
+
+class UserLoginOut(BaseModel):
+    id: int
+    user_id: str
+    is_admin: bool
+    last_login: str | None
 
 
 @router.post("/reset/{user_id}", response_model=CreateUserOut)
@@ -44,7 +87,6 @@ def reset_user(user_id: str, is_admin: bool = False, _: object = Depends(require
         path += "?is_admin=true"
     out = _db_post(path)
     return CreateUserOut(**out)
-
 
 @router.post("/create", response_model=CreateUserOut)
 def create_user(admin: bool = False, _: object = Depends(require_admin)):
@@ -62,4 +104,28 @@ class InsertRowIn(BaseModel):
 @router.post("/insert/{table_name}")
 def insert_row(table_name: str, body: InsertRowIn, _: object = Depends(require_admin)):
     out = _db_post(f"/users/insert/{urllib.parse.quote(table_name)}", {"values": body.values})
+    return out
+
+@router.get("/logins", response_model=list[UserLoginOut])
+def list_user_logins(_: object = Depends(require_admin)):
+    out = _db_get("/users/logins")
+    # out is expected to be a list of {user_id, last_login}
+    return [UserLoginOut(**r) for r in out]
+
+
+@router.delete("/delete/{user_id}")
+def delete_user(user_id: str, _: object = Depends(require_admin)):
+    """Admin-only: delete a user by username or numeric id."""
+    out = _db_delete(f"/users/delete/{urllib.parse.quote(str(user_id))}")
+    return out
+
+
+class RenameIn(BaseModel):
+    old_user_id: str
+    new_user_id: str
+
+
+@router.post("/rename")
+def rename_user(body: RenameIn, _: object = Depends(require_admin)):
+    out = _db_post("/users/rename", body.model_dump())
     return out
