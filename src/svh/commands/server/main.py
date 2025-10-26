@@ -80,7 +80,6 @@ def broadcast(
     if key:
         headers["X-Notify-Key"] = key
 
-    # 1) Try popup endpoint
     url_notify = base_url.rstrip("/") + "/notify"
     payload_notify = {"text": message,
                       "audience": "admins" if admins else "all"}

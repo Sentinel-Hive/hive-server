@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Literal, Union
 
 
-# --- Client → Server messages ---
+# --- Client to Server messages ---
 
 class HelloMessage(BaseModel):
     type: Literal["hello"]
@@ -18,7 +18,7 @@ class DevPopupMessage(BaseModel):
 ClientMessage = Union[HelloMessage, DevPopupMessage]
 
 
-# --- Server → Client messages ---
+# --- Server to Client messages ---
 
 class PopupMessage(BaseModel):
     type: Literal["popup"]
