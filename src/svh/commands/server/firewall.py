@@ -4,7 +4,7 @@ from svh import notify
 from typing import Any, Dict, Iterable, Set, Tuple
 import json
 from typing import Optional
-import shutil  # added to resolve ufw path
+import shutil
 
 try:
     import yaml
@@ -65,7 +65,8 @@ def close_port(port: int, proto: str = "tcp"):
     except subprocess.CalledProcessError as e:
         notify.error(f"Failed to close port {port}:{proto.upper()}. Error: {e}")
 
-def configure_firewall_from_config(config_path: str) -> Dict[str, Any]:
+
+def configure_firewall_from_config(config_path: str, ssh_port: Optional[int] = None):
     """
     Configure the firewall to close all ports not present in config.yml,
     start SSH service, and ensure SSH port is allowed.
@@ -79,8 +80,13 @@ def configure_firewall_from_config(config_path: str) -> Dict[str, Any]:
       ssh:
         port: 22
         username: "alice"
-        password: "****"        # or
+        password: "****"
         key_path: "/path/to/key"
+      
+      OR:
+      
+      ssh_port:
+        ssh: 22
 
     Returns dict with parsed ssh configuration (without password value logging).
     """
@@ -90,11 +96,22 @@ def configure_firewall_from_config(config_path: str) -> Dict[str, Any]:
     cfg = _load_yaml(config_path)
     firewall_cfg = (cfg or {}).get("firewall", {}) or {}
     ssh_cfg = (cfg or {}).get("ssh", {}) or {}
+    ssh_port_cfg = (cfg or {}).get("ssh_port", {}) or {}
 
     allowed_ports = _parse_allowed_ports(firewall_cfg.get("allowed_ports", []))
-    ssh_port = int(ssh_cfg.get("port", 22))
+    
+    # Use custom ssh_port if provided, otherwise check both config formats
+    if ssh_port is not None:
+        effective_ssh_port = ssh_port
+    elif "port" in ssh_cfg:
+        effective_ssh_port = int(ssh_cfg.get("port", 22))
+    elif "ssh" in ssh_port_cfg:
+        effective_ssh_port = int(ssh_port_cfg.get("ssh", 22))
+    else:
+        effective_ssh_port = 22
+    
     # Always allow SSH port (tcp)
-    allowed_ports.add((ssh_port, "tcp"))
+    allowed_ports.add((effective_ssh_port, "tcp"))
 
     os_name = platform.system().lower()
     try:
@@ -102,7 +119,7 @@ def configure_firewall_from_config(config_path: str) -> Dict[str, Any]:
             _apply_linux_firewall(allowed_ports)
             _start_ssh_linux()
         elif os_name == "windows":
-            _apply_windows_firewall(allowed_ports, ssh_port)
+            _apply_windows_firewall(allowed_ports, effective_ssh_port)
             _start_ssh_windows()
         elif os_name == "darwin":
             notify.error("This application is not supported on macOS.")
@@ -110,20 +127,21 @@ def configure_firewall_from_config(config_path: str) -> Dict[str, Any]:
         else:
             notify.error(f"Firewall handling not implemented for {os_name}")
             exit(1)
-        notify.firewall(f"Firewall configured from {config_path}. SSH port {ssh_port} allowed.")
+        notify.firewall(f"Firewall configured from {config_path}. SSH port {effective_ssh_port} allowed.")
     except subprocess.CalledProcessError as e:
         notify.error(f"Failed to configure firewall/SSH. Error: {e}")
 
     return {
         "ssh": {
-            "port": ssh_port,
+            "port": effective_ssh_port,
             "username": ssh_cfg.get("username"),
             "password_set": bool(ssh_cfg.get("password")),
             "key_path": ssh_cfg.get("key_path"),
         }
     }
 
-def firewall_ssh_status(config_path: Optional[str] = None) -> Dict[str, Any]:
+
+def firewall_ssh_status(config_path: Optional[str] = None, ssh_port: Optional[int] = None) -> Dict[str, Any]:
     """
     Report firewall and SSH status. If config_path is provided, verify that:
     - SSH port is allowed and listening
@@ -131,34 +149,47 @@ def firewall_ssh_status(config_path: Optional[str] = None) -> Dict[str, Any]:
     Returns a dict with 'ok' flag and details, and logs concise notify messages.
     """
     expected_allowed: Set[Tuple[int, str]] = set()
-    ssh_port = 22
+    effective_ssh_port = 22
 
     if config_path:
         cfg = _load_yaml(config_path)
         firewall_cfg = (cfg or {}).get("firewall", {}) or {}
         ssh_cfg = (cfg or {}).get("ssh", {}) or {}
+        ssh_port_cfg = (cfg or {}).get("ssh_port", {}) or {}
         expected_allowed = _parse_allowed_ports(firewall_cfg.get("allowed_ports", []))
-        ssh_port = int(ssh_cfg.get("port", 22))
-    expected_allowed.add((ssh_port, "tcp"))
+        
+        # Check both config formats
+        if "port" in ssh_cfg:
+            effective_ssh_port = int(ssh_cfg.get("port", 22))
+        elif "ssh" in ssh_port_cfg:
+            effective_ssh_port = int(ssh_port_cfg.get("ssh", 22))
+        else:
+            effective_ssh_port = 22
+    
+    # Override with custom ssh_port if provided
+    if ssh_port is not None:
+        effective_ssh_port = ssh_port
+    
+    expected_allowed.add((effective_ssh_port, "tcp"))
 
     os_name = platform.system().lower()
     if os_name == "linux":
-        details = _linux_status(ssh_port)
+        details = _linux_status(effective_ssh_port)
     elif os_name == "windows":
-        details = _windows_status(ssh_port)
+        details = _windows_status(effective_ssh_port)
     elif os_name == "darwin":
         notify.error("This application is not supported on macOS.")
         return {"ok": False, "os": os_name}
 
     allow_ok = True
-    if config_path:
+    if config_path or ssh_port is not None:
         current_allowed = set(details.get("allowed_ports", []))
         allow_ok = expected_allowed.issubset(current_allowed)
 
     ok = bool(details.get("firewall_enabled")) and bool(details.get("ssh_running")) and bool(details.get("ssh_port_listening")) and allow_ok
 
     notify.firewall(f"Status: firewall_enabled={details.get('firewall_enabled')}, defaults={details.get('defaults')}, ssh_running={details.get('ssh_running')}, ssh_port_listening={details.get('ssh_port_listening')}")
-    if not allow_ok and config_path:
+    if not allow_ok and (config_path or ssh_port is not None):
         notify.error("Allowed ports do not match expected allowlist from config.yml")
     else:
         notify.firewall("Allowed ports match expected config." if config_path else "Allowed ports listed.")
@@ -166,10 +197,11 @@ def firewall_ssh_status(config_path: Optional[str] = None) -> Dict[str, Any]:
     return {
         "ok": ok,
         "os": os_name,
-        "ssh_port": ssh_port,
+        "ssh_port": effective_ssh_port,
         "allowed_ports_expected": sorted(list(expected_allowed)),
         "details": details,
     }
+
 
 def _load_yaml(path: str) -> Dict[str, Any]:
     try:
@@ -184,6 +216,7 @@ def _load_yaml(path: str) -> Dict[str, Any]:
     except Exception as e:
         notify.error(f"Failed to parse YAML config {path}: {e}")
         return {}
+
 
 def _parse_allowed_ports(items: Iterable[Any]) -> Set[Tuple[int, str]]:
     """
@@ -215,6 +248,7 @@ def _parse_allowed_ports(items: Iterable[Any]) -> Set[Tuple[int, str]]:
             result.add((port, "udp" if proto == "udp" else "tcp"))
     return result
 
+
 def _apply_linux_firewall(allowed: Set[Tuple[int, str]]) -> None:
     """
     Reset UFW and allow only the specified ports. This will remove all existing rules.
@@ -230,6 +264,7 @@ def _apply_linux_firewall(allowed: Set[Tuple[int, str]]) -> None:
 
     for cmd in cmds:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
 def _start_ssh_linux() -> None:
     """
@@ -250,6 +285,7 @@ def _start_ssh_linux() -> None:
     if last_err:
         raise last_err
 
+
 def _apply_windows_firewall(allowed: Set[Tuple[int, str]], ssh_port: int) -> None:
     """
     Configure Windows Defender Firewall:
@@ -269,6 +305,7 @@ def _apply_windows_firewall(allowed: Set[Tuple[int, str]], ssh_port: int) -> Non
     ps_script = "; ".join(["$ErrorActionPreference = 'Stop'"] + rule_cmds)
     subprocess.run(["powershell", ps_script], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+
 def _start_ssh_windows() -> None:
     """
     Ensure OpenSSH Server is enabled and running on Windows.
@@ -280,11 +317,10 @@ def _start_ssh_windows() -> None:
     ])
     subprocess.run(["powershell", ps_script], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+
 def _linux_status(ssh_port: int) -> Dict[str, Any]:
-    # Find ufw binary explicitly (non-root PATH often lacks /usr/sbin)
     ufw_path = shutil.which("ufw") or "/usr/sbin/ufw"
     try:
-        # Use sudo to read ufw status
         proc = subprocess.run(["sudo", ufw_path, "status", "verbose"], capture_output=True, text=True, check=False)
         out = proc.stdout or ""
     except FileNotFoundError:
@@ -334,6 +370,7 @@ def _linux_status(ssh_port: int) -> Dict[str, Any]:
         "ssh_port_listening": port_listening,
     }
 
+
 def _linux_is_service_active(name: str) -> bool:
     try:
         p = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True)
@@ -344,6 +381,7 @@ def _linux_is_service_active(name: str) -> bool:
             return p.returncode == 0
         except Exception:
             return False
+
 
 def _windows_status(ssh_port: int) -> Dict[str, Any]:
     try:

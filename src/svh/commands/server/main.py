@@ -7,7 +7,8 @@ from svh.commands.server.cli_auth import attach_auth_commands
 from svh.commands.server.config import config, state
 from svh.commands.server.firewall import firewall_ssh_status, configure_firewall_from_config
 from svh import notify  
-from typing import Optional  
+from typing import Optional
+import sys
 
 app = typer.Typer(help="Server management commands")
 
@@ -17,21 +18,30 @@ DEFAULT_CONFIG_PATH = Path(__file__).parent / "config/config.yml"
 
 attach_auth_commands(app)
 
+@app.callback(invoke_without_command=True)
+def main_callback(
+    ctx: typer.Context,
+    configure_firewall: bool = typer.Option(
+        False, "-F", help="Configure firewall (shortcut for 'firewall' command)"
+    ),
+):
+    """Server management commands."""
+    if configure_firewall and ctx.invoked_subcommand is None:
+        # Redirect to firewall command
+        ctx.invoke(firewall_cmd, config=None)
+
 @app.command(help="Start one or more API servers.")
 def start(
     service: str = typer.Option(
         "all", "--service", "-s", help="Service to start (client, db, or all)"
     ),
-    # Use default config with -c
     use_default_config: bool = typer.Option(
         False, "--use-default-config", "-c", help="Use the built-in default config.yml"
     ),
-    # Provide a custom config path with -C/--config
     config_file: Optional[Path] = typer.Option(
         None, "--config", "-C", help="Path to configuration file", exists=True
     ),
     detach: bool = typer.Option(False, "--detach", "-d", help="Run in detached mode"),
-    # Only -F (no long --configure-firewall)
     configure_firewall: bool = typer.Option(
         False, "-F", help="Configure firewall from config"
     ),
@@ -118,8 +128,8 @@ def status(
         raise typer.Exit(1)
 
 
-@app.command()
-def firewall(
+@app.command(name="firewall")
+def firewall_cmd(
     config: Path = typer.Option(
         None, "--config", "-c", help="Path to configuration file", exists=True
     ),
