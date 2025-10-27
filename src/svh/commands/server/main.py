@@ -10,6 +10,10 @@ from svh.commands.server.manager import manage_service
 from svh.commands.server.helper import load_config
 from svh.commands.server.cli_auth import attach_auth_commands
 from svh.commands.server.config import config, state
+from svh.commands.server.firewall import firewall_ssh_status, configure_firewall_from_config
+from svh import notify  
+from typing import Optional
+import sys
 
 from typing import Optional, List
 
@@ -22,21 +26,55 @@ DEFAULT_CONFIG_PATH = Path(__file__).parent / "config/config.yml"
 
 attach_auth_commands(app)
 
+@app.callback(invoke_without_command=True)
+def main_callback(
+    ctx: typer.Context,
+    configure_firewall: bool = typer.Option(
+        False, "-F", help="Configure firewall (shortcut for 'firewall' command)"
+    ),
+):
+    """Server management commands."""
+    if configure_firewall and ctx.invoked_subcommand is None:
+        # Redirect to firewall command
+        ctx.invoke(firewall_cmd, config=None)
 
 @app.command(help="Start one or more API servers.")
 def start(
     service: str = typer.Option(
         "all", "--service", "-s", help="Service to start (client, db, or all)"
     ),
-    config: Path = typer.Option(
-        None, "--config", "-c", help="Path to configuration file", exists=True
+    use_default_config: bool = typer.Option(
+        False, "--use-default-config", "-c", help="Use the built-in default config.yml"
     ),
-    detach: bool = typer.Option(
-        False, "--detach", "-d", help="Run in detached mode"),
+    config_file: Optional[Path] = typer.Option(
+        None, "--config", "-C", help="Path to configuration file", exists=True
+    ),
+    detach: bool = typer.Option(False, "--detach", "-d", help="Run in detached mode"),
+    configure_firewall: bool = typer.Option(
+        False, "-F", help="Configure firewall from config"
+    ),
 ):
-    config_path = config or DEFAULT_CONFIG_PATH
+    # Determine config path
+    if use_default_config:
+        config_path = DEFAULT_CONFIG_PATH
+    elif config_file is not None:
+        config_path = config_file
+    else:
+        config_path = DEFAULT_CONFIG_PATH
+
     cfg = load_config(config_path)
     state.save_config_state(config_path)
+    
+    # Configure firewall (resets UFW and allows only ports from config + SSH)
+    if configure_firewall:
+        try:
+            configure_firewall_from_config(str(config_path))
+        except Exception as e:
+            notify.error(f"Failed to configure firewall: {e}")
+            notify.firewall("Continuing with service start...")
+    else:
+        notify.firewall("Skipping firewall configuration (use -F to apply config).")
+    
     manage_service("start", service, cfg, detach=detach)
 
 
@@ -55,141 +93,63 @@ def list():
     crud.list_servers()
 
 
-@app.command(help='Broadcast to clients (popup or fallback to alert).')
-def broadcast(
-    message: str = typer.Argument(...,
-                                  help="Text for popup (or alert fallback)"),
-    base_url: str = typer.Option("http://127.0.0.1:5167", "--base-url", "-b"),
-    key: str | None = typer.Option(
-        None, "--key", help="Notify key (or env SVH_NOTIFY_KEY)"),
-    admins: bool = typer.Option(
-        False, "--admins", "-a", help="Send to admin clients only"),
+@app.command()
+def status(
+    config: Path = typer.Option(
+        None, "--config", "-c", help="Path to config.yml", exists=False
+    )
 ):
-    """
-    Tries /notify (popup). If not found (404), falls back to /alerts/notify.
-    Adds audience='admins' when --admins/-a is provided.
-    """
-    import json
-    import os
-    import urllib.request
-    import urllib.error
-    from svh import notify
+    """Check firewall and SSH configuration status."""
+    config_path = config or DEFAULT_CONFIG_PATH
 
-    headers = {"Content-Type": "application/json"}
-    key = key or os.getenv("SVH_NOTIFY_KEY")
-    if key:
-        headers["X-Notify-Key"] = key
+    if not config_path.exists():
+        notify.error(f"Config file not found: {config_path}")
+        notify.firewall("Running status check without config validation...")
+        result = firewall_ssh_status(None)
+    else:
+        result = firewall_ssh_status(str(config_path))
 
-    url_notify = base_url.rstrip("/") + "/notify"
-    payload_notify = {"text": message,
-                      "audience": "admins" if admins else "all"}
-    notify.server(f"Broadcasting to {url_notify}")
-    try:
-        req = urllib.request.Request(url_notify, data=json.dumps(payload_notify).encode("utf-8"),
-                                     headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            out = json.loads(resp.read().decode("utf-8"))
-            if out.get("ok"):
-                notify.server("Broadcast sent (popup).")
-                return
+    # concise summary routed through notify
+    notify.firewall(f"OS: {result['os']}")
+    notify.firewall(f"SSH Port: {result['ssh_port']}")
+    notify.firewall(f"Firewall Enabled: {result['details'].get('firewall_enabled')}")
+    notify.firewall(f"SSH Running: {result['details'].get('ssh_running')}")
+    notify.firewall(f"SSH Port Listening: {result['details'].get('ssh_port_listening')}")
+    notify.firewall(f"Allowed Ports: {result['details'].get('allowed_ports')}")
+    notify.firewall(f"Defaults: {result['details'].get('defaults')}")
+
+    if result["ok"]:
+        notify.firewall("✓ Server firewall and SSH are configured correctly")
+    else:
+        notify.error("Issues detected with firewall or SSH configuration")
+        if not result['details'].get('firewall_enabled'):
+            notify.error("Firewall is not enabled. Run: sudo ufw enable")
+        if not result['details'].get('ssh_running'):
+            notify.error("SSH service is not running")
+        if not result['details'].get('ssh_port_listening'):
+            notify.error("SSH port is not listening")
+        if config_path.exists():
+            if config_path == DEFAULT_CONFIG_PATH:
+                notify.firewall("Run 'svh server start -c -F -d' to configure firewall from default config")
             else:
-                notify.error(f"Server response: {out}")
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="ignore")
-        notify.error(f"HTTP {e.code} {e.reason} — {detail}")
-        if e.code != 404:
-            raise typer.Exit(code=1)
-    except urllib.error.URLError as e:
-        notify.error(f"Failed to reach API: {e.reason}")
-        raise typer.Exit(code=1)
-
-    # 2) Fallback to alerts endpoint (medium severity, title = message)
-    url_alerts = base_url.rstrip("/") + "/alerts/notify"
-    payload_alert = {
-        "title": message,
-        "severity": "medium",
-        "source": "cli",
-        "audience": "admins" if admins else "all",
-    }
-    notify.server(f"Broadcasting to {url_alerts}")
-    try:
-        req = urllib.request.Request(url_alerts, data=json.dumps(payload_alert).encode("utf-8"),
-                                     headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            out = json.loads(resp.read().decode("utf-8"))
-            if out.get("ok"):
-                notify.server("Broadcast sent (alert fallback).")
-                return
-            else:
-                notify.error(f"Server response: {out}")
-                raise typer.Exit(code=1)
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="ignore")
-        notify.error(f"HTTP {e.code} {e.reason} — {detail}")
-        raise typer.Exit(code=1)
-    except urllib.error.URLError as e:
-        notify.error(f"Failed to reach API: {e.reason}")
-        raise typer.Exit(code=1)
+                notify.firewall(f"Run 'svh server start -C {config_path} -F -d' to configure firewall from this config")
+        raise typer.Exit(1)
 
 
-@app.command(help="Send a structured alert to clients (via /alerts/notify).")
-def alert(
-    title: str = typer.Argument(..., help="Alert title"),
-    severity: str = typer.Option(
-        "medium", "--severity", "-s", help="critical|high|medium|low"),
-    source: str = typer.Option(
-        "server", "--source", help="Origin (e.g., api-gw, db-core)"),
-    description: Optional[str] = typer.Option(
-        None, "--desc", help="Longer text"),
-    tags: List[str] = typer.Option(
-        [], "--tag", help="Repeatable: --tag api --tag errors"),
-    base_url: str = typer.Option("http://127.0.0.1:5167", "--base-url", "-b"),
-    key: Optional[str] = typer.Option(
-        None, "--key", help="Notify key (or env SVH_NOTIFY_KEY)"),
-    admins: bool = typer.Option(
-        False, "--admins", "-a", help="Send to admin clients only"),
+@app.command(name="firewall")
+def firewall_cmd(
+    config: Path = typer.Option(
+        None, "--config", "-c", help="Path to configuration file", exists=True
+    ),
 ):
-    import json
-    import os
-    import urllib.request
-    import urllib.error
-    from svh import notify
-
-    sev = severity.lower()
-    if sev not in {"critical", "high", "medium", "low"}:
-        notify.error("Invalid --severity. Use: critical|high|medium|low")
-        raise typer.Exit(code=1)
-
-    payload = {
-        "title": title,
-        "severity": sev,
-        "source": source,
-        "description": description,
-        "tags": tags,
-        "audience": "admins" if admins else "all",
-    }
-
-    headers = {"Content-Type": "application/json"}
-    key = key or os.getenv("SVH_NOTIFY_KEY")
-    if key:
-        headers["X-Notify-Key"] = key
-
-    url = base_url.rstrip("/") + "/alerts/notify"
-    notify.server(f"Sending alert → {url}")
+    """Configure firewall and SSH from config.yml (can be run while server is running)."""
+    config_path = config or DEFAULT_CONFIG_PATH
+    
     try:
-        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"),
-                                     headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            out = json.loads(resp.read().decode("utf-8"))
-            if out.get("ok"):
-                notify.server(f"Alert sent (id={out.get('id')})")
-            else:
-                notify.error(f"Server response: {out}")
-                raise typer.Exit(code=1)
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="ignore")
-        notify.error(f"HTTP {e.code} {e.reason} — {detail}")
-        raise typer.Exit(code=1)
-    except urllib.error.URLError as e:
-        notify.error(f"Failed to reach API: {e.reason}")
-        raise typer.Exit(code=1)
+        result = configure_firewall_from_config(str(config_path))
+        notify.firewall(f"Firewall configured successfully. SSH port: {result['ssh']['port']}")
+    except Exception as e:
+        notify.error(f"Failed to configure firewall: {e}")
+        raise typer.Exit(1)
+
+

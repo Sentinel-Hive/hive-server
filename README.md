@@ -86,3 +86,21 @@ svh server stop -s db
 ```bash
 # TODO
 ```
+
+### Firewall
+You can check firewall status with this command:
+```bash
+svh server status
+```
+You can start the firewall with this commnad: 
+```bash
+svh server -F
+
+or
+
+svh server firewall
+```
+You can start the server and the firewall at the same time with this commnad:
+```bash
+svh server start -c -F -d
+```
