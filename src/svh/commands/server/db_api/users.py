@@ -1,11 +1,14 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import Any
 from sqlalchemy import MetaData, Table, insert
-from sqlalchemy.orm import Session
 
 from ...db.session import session_scope, get_engine
-from ...db.seed import create_user as _create_user, seed_users as _seed_users  # tuple-returning creator
+from ...db.seed import (
+    create_user as _create_user,
+    seed_users as _seed_users,
+)  # tuple-returning creator
 from ...db.seed import upsert_user as _upsert_user
 from ...db.security import gen_password
 from ...db.models import User, AuthToken
@@ -16,10 +19,12 @@ from fastapi import HTTPException
 
 router = APIRouter()
 
+
 class CreateUserOut(BaseModel):
     user_id: str
     password: str
     is_admin: bool
+
 
 @router.post("/create", response_model=CreateUserOut)
 def create_user(admin: bool = False):
@@ -27,6 +32,7 @@ def create_user(admin: bool = False):
     with session_scope() as s:
         uid, pwd, is_admin = _create_user(s, admin)
         return CreateUserOut(user_id=uid, password=pwd, is_admin=is_admin)
+
 
 @router.post("/seed", response_model=list[CreateUserOut])
 def seed(admins: int = 1, users: int = 5):
@@ -37,13 +43,19 @@ def seed(admins: int = 1, users: int = 5):
     # Normalize to CreateUserOut
     return [CreateUserOut(**row) for row in created]
 
+
 class InsertRowIn(BaseModel):
-    values: dict
+    values: dict[str, Any]
+
 
 @router.post("/insert/{table_name}")
 def insert_row(table_name: str, body: InsertRowIn):
     """Generic insert helper (admin-only at client API level)."""
     engine = get_engine()
+    if engine is None:
+        raise HTTPException(
+            status_code=500, detail="Database engine failed to initialize."
+        )
     md = MetaData()
     try:
         tbl = Table(table_name, md, autoload_with=engine)
@@ -62,7 +74,9 @@ def reset_user(user_id: str, is_admin: bool = False):
         pwd = gen_password()
         out = _upsert_user(s, user_id, pwd, is_admin)
         # upsert_user returns a dict with password equal to provided pwd
-        return CreateUserOut(user_id=out["user_id"], password=out["password"], is_admin=out["is_admin"])
+        return CreateUserOut(
+            user_id=out["user_id"], password=out["password"], is_admin=out["is_admin"]
+        )
 
 
 class UserLoginOut(BaseModel):
@@ -77,7 +91,12 @@ def list_user_logins():
     """Return all users with the most-recent token issued_at (or None)."""
     with session_scope() as s:
         stmt = (
-            select(User.id, User.user_id, User.is_admin, func.max(AuthToken.issued_at).label("last_login"))
+            select(
+                User.id,
+                User.user_id,
+                User.is_admin,
+                func.max(AuthToken.issued_at).label("last_login"),
+            )
             .outerjoin(AuthToken, User.id == AuthToken.user_id_fk)
             .group_by(User.id, User.user_id, User.is_admin)
             .order_by(User.user_id)
@@ -86,7 +105,14 @@ def list_user_logins():
         out = []
         for row in res:
             # row columns: id, user_id, is_admin, last_login
-            out.append({"id": int(row[0]), "user_id": row[1], "is_admin": bool(row[2]), "last_login": row[3]})
+            out.append(
+                {
+                    "id": int(row[0]),
+                    "user_id": row[1],
+                    "is_admin": bool(row[2]),
+                    "last_login": row[3],
+                }
+            )
         return out
 
 
@@ -129,7 +155,6 @@ def rename_user(body: RenameIn):
         return {"ok": True, "user_id": body.new_user_id}
 
 
-
 @router.delete("/delete/{user_identifier}")
 def delete_user(user_identifier: int | str):
     """Delete a user by username or numeric id. Prevent deleting the last admin account."""
@@ -150,7 +175,9 @@ def delete_user(user_identifier: int | str):
 
         # disallow deleting the last admin
         if getattr(u, "is_admin", False):
-            admin_count = s.scalar(select(func.count()).select_from(User).where(User.is_admin == True))
+            admin_count = s.scalar(
+                select(func.count()).select_from(User).where(User.is_admin == True)
+            )
             if admin_count is None:
                 admin_count = 0
             if int(admin_count) <= 1:
