@@ -35,25 +35,13 @@ def login(body: LoginIn):
         ):
             raise HTTPException(401, "Invalid credentials")
 
-        # Revoke any currently-active tokens for this user
-        s.execute(
-            sa_update(AuthToken)
-            .where(AuthToken.user_id_fk == user.id, AuthToken.revoked_at.is_(None))
-            .values(revoked_at=datetime.utcnow())
-        )
-        # Keep only the most recent revoked token
-        ids = s.scalars(
-            select(AuthToken.id)
-            .where(AuthToken.user_id_fk == user.id, AuthToken.revoked_at.is_not(None))
-            .order_by(AuthToken.revoked_at.desc(), AuthToken.id.desc())
-        ).all()
-        if len(ids) > 1:
-            s.execute(sa_delete(AuthToken).where(AuthToken.id.in_(ids[1:])))
-
-        # Issue new active token row
+        # Issue a new active token row. Do not revoke existing tokens here
+        # to avoid accidental logout of other active sessions (for example
+        # when the frontend refreshes and re-authenticates). Token revocation
+        # is still performed on explicit logout via /auth/logout.
         token = make_token(user.user_id)
         s.add(AuthToken(user=user, token=token))
-        return LoginOut(token=token, user_id=user.user_id, is_admin=user.is_admin)
+        return LoginOut(token=token, user_id=user.user_id, is_admin=bool(user.is_admin))
 
 
 class LogoutIn(BaseModel):
