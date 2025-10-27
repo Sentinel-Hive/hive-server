@@ -6,10 +6,8 @@ from svh.commands.server.auth_users import (
     users_create,
     users_seed,
     users_insert,
-    insp_tables,
-    insp_schema,
     insp_show,
-    insp_sql,
+    users_reset,
 )
 
 
@@ -17,15 +15,16 @@ def attach_auth_commands(app: typer.Typer) -> None:
     app.command("login")(login)
     app.command("logout")(logout)
 
-    users = typer.Typer(help="Admin-only user utilities")
+    # Server-side allowed DB operations (proxied via Client API):
+    # - insert rows into a table
+    users = typer.Typer(help="Admin-only insert utilities (proxied through the Client API).")
     users.command("create")(users_create)
     users.command("seed")(users_seed)
     users.command("insert")(users_insert)
+    users.command("reset")(users_reset)
     app.add_typer(users, name="users")
 
-    inspect = typer.Typer(help="Local DB inspection")
-    inspect.command("tables")(insp_tables)
-    inspect.command("schema")(insp_schema)
+    # Limited inspect: only `show` is exposed on the server CLI (admin required).
+    inspect = typer.Typer(help="Local DB inspection (admin login required, limited to 'show').")
     inspect.command("show")(insp_show)
-    inspect.command("sql")(insp_sql)
     app.add_typer(inspect, name="inspect")
