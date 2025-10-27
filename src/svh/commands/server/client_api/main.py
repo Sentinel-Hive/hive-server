@@ -45,11 +45,14 @@ if DEV_CORS:
 from .auth import router as auth_router
 from .users import router as users_router
 from .health import router as health_router
+from .data import router as data_router
 
 app.include_router(health_router, prefix="/health", tags=["health"])
-app.include_router(users_router, prefix="/users", tags=["users"])
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(users_router,  prefix="/users",  tags=["users"])
+app.include_router(auth_router,   prefix="/auth",   tags=["auth"])
+app.include_router(data_router,   tags=["data"])
 app.include_router(websocket_router, tags=["websocket"])
+
 
 
 @app.post("/ingest")

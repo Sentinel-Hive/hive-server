@@ -29,7 +29,6 @@ source .venv/bin/activate
 ```bash
 pip install --editable .
 ```
-
 ### Windows (PowerShell)
 
 **1. Clone repository**
@@ -51,6 +50,11 @@ python -m venv .venv
 **4. Install in editable (dev) mode**
 ```bash
 pip install --editable .
+```
+
+**5. Install dependencies**
+```bash
+pip install httpx
 ```
 
 ---
@@ -85,6 +89,50 @@ svh server stop -s db
 
 ```bash
 # TODO
+```
+
+---
+
+## Testing Data Ingestion Endpoint
+
+The data ingestion endpoint accepts JSON data and stores it in the database.
+
+### Prerequisites
+1. Start both servers:
+```bash
+svh server start -dhttps://github.com/Sentinel-Hive/hive-server/pull/9/conflict?name=src%252Fsvh%252Fcommands%252Fserver%252Fclient_api%252Fmain.py&ancestor_oid=0a8d2b553cdf4bf11042cdaeef9177fa7274ffab&base_oid=e7c3cf257506fcdee5168a9fb0f6d000336b41f5&head_oid=42f935e35a729a8237db3ecf92190ee5d71a46c8
+```
+
+2. Login to create a session (default credentials: admin/admin):
+```bash
+svh server login --u admin --p admin
+```
+
+### Test With Admin Authentication (Production Endpoint)
+
+**Step 1: Get an authentication token**
+```bash
+curl -X POST http://localhost:5167/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "admin", "password": "admin"}'
+```
+
+**Response:**
+```json
+{"token": "admin.1760992694.bca67429b758d0398a3bfcc2fef00519f61de07c179021176c500011d1008f47"}
+```
+
+**Step 2: Use the token to store data**
+```bash
+curl -X POST http://localhost:5167/data \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer admin.1760992694.bca67429b758d0398a3bfcc2fef00519f61de07c179021176c500011d1008f47" \
+  -d '{"authenticated": true, "secure": "data", "admin_test": "success"}'
+```
+
+**Expected Response:**
+```json
+{"success": true, "id": 2}
 ```
 
 ### Firewall

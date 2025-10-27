@@ -42,4 +42,11 @@ class Dataset(Base):
     __table_args__ = (UniqueConstraint("dataset_name", name="uq_datasets_dataset_name"),)
 
     def __repr__(self):
-        return f"<Dataset(id={self.id}, name='{self.dataset_name}', path='{self.dataset_path}', added_at='{self.added_at}')>"
+        return f"<Event(id={self.id}, type='{self.event_type}', timestamp='{self.timestamp}')>"
+
+class DataStore(Base):
+    __tablename__ = "data_store"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    content = Column(JSON, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
