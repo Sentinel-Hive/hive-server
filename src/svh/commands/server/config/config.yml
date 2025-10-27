@@ -8,6 +8,9 @@ firewall:
   close_by_default: True
   allowed_ports: []
 
+ssh_port:
+  ssh: 22
+
 database:
   url: "sqlite:///./hive.sqlite"
   admin_user: "Username"

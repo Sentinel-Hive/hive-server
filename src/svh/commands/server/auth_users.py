@@ -10,10 +10,13 @@ app = typer.Typer(help="Server management and authenticated admin utilities.")
 # ---------- Config ----------
 def _base_url_opt():
     return typer.Option(
-        "http://127.0.0.1:5169",
+        "http://127.0.0.1:5167",
         "--base-url",
+        "-b",
+        "--b",
+        "-base-url",
         envvar="SVH_API_BASE",
-        help="Base URL of the Client API (the app talks to this).",
+        help="Base URL of the Client API (should be http://127.0.0.1:5167). Requests are routed through the client API to the DB API as needed.",
     )
 
 
@@ -105,15 +108,15 @@ def _ensure_admin(base_url: str) -> str:
 # ---------- Commands: login/logout ----------
 @app.command(
     "login",
-    help="Login to the Client API and store a token (required for admin commands).",
+    help="Login to the Client API (port 5167) and store a token (required for admin commands).",
 )
 def login(
-    user_id: str = typer.Option(..., "--u"),
-    password: str = typer.Option(..., "--p"),
-    ttl: int = typer.Option(3600, "--ttl", help="Session TTL (seconds)"),
+    user_id: str = typer.Option(..., "--user", "-u", "--u", "-user"),
+    password: str = typer.Option(..., "--pass", "-p", "--p", "-pass"),
+    ttl: int = typer.Option(3600, "--ttl", "-t", "--t", "-ttl", help="Session TTL (seconds)"),
     base_url: str = _base_url_opt(),
     replace: bool = typer.Option(
-        False, "--replace", help="Auto-logout the existing session if present"
+        False, "--replace", "-r", "--r", "-replace", help="Auto-logout the existing session if present"
     ),
 ):
     existing = _load_token()
@@ -165,13 +168,13 @@ def logout(base_url: str = _base_url_opt()):
 
 
 # ---------- Admin (proxied) users commands ----------
-users = typer.Typer(help="Admin-only user utilities (proxied through server).")
+users = typer.Typer(help="Admin-only user utilities (proxied through the Client API, which routes to the DB API as needed).")
 app.add_typer(users, name="users")
 
 
 @users.command("create", help="Create a user and print credentials.")
 def users_create(
-    admin: bool = typer.Option(False, "--admin"),
+    admin: bool = typer.Option(False, "--admin", "-a", "--a", "-admin"),
     base_url: str = _base_url_opt(),
 ):
     token = _ensure_admin(base_url)
@@ -180,10 +183,22 @@ def users_create(
     typer.echo(json.dumps(out, indent=2))
 
 
+@users.command("reset", help="Reset a user's password and print the new cleartext password (admin only).")
+def users_reset(
+    user_id: str,
+    is_admin: bool = typer.Option(False, "--admin", "-a", "--a", "-admin"),
+    base_url: str = _base_url_opt(),
+):
+    token = _ensure_admin(base_url)
+    q = "?is_admin=true" if is_admin else ""
+    out = _req("POST", f"{base_url}/users/reset/{urllib.parse.quote(user_id)}{q}", token=token)
+    typer.echo(json.dumps(out, indent=2))
+
+
 @users.command("seed", help="Seed initial users (only if table empty).")
 def users_seed(
-    admins: int = typer.Option(1, "--admins"),
-    users: int = typer.Option(5, "--users"),
+    admins: int = typer.Option(1, "--admins", "-A", "--A", "-admins"),
+    users: int = typer.Option(5, "--users", "-U", "--U", "-users"),
     base_url: str = _base_url_opt(),
 ):
     token = _ensure_admin(base_url)
@@ -198,7 +213,7 @@ def users_seed(
 )
 def users_insert(
     table_name: str,
-    values: str = typer.Option(..., "--values", help="JSON object of column values"),
+    values: str = typer.Option(..., "--values", "-v", "--v", "-values", help="JSON object of column values"),
     base_url: str = _base_url_opt(),
 ):
     token = _ensure_admin(base_url)
@@ -213,59 +228,17 @@ def users_insert(
 
 
 # ---------- Local DB inspect helpers (admin required even though local) ----------
-inspect = typer.Typer(help="Local DB inspection (admin login required).")
+inspect = typer.Typer(help="Local DB inspection (admin login required, routed through Client API).")
 app.add_typer(inspect, name="inspect")
 
 from svh.commands.db.session import get_engine, create_all
 from sqlalchemy import inspect as sa_inspect, MetaData, Table, select, func, text
 
 
-@inspect.command("tables", help="List tables with row counts (local).")
-def insp_tables(base_url: str = _base_url_opt()):
-    _ensure_admin(base_url)  # gate by admin
-    create_all()
-    eng = get_engine()
-    insp = sa_inspect(eng)
-    names = sorted(insp.get_table_names())
-    if not names:
-        typer.echo("(no tables)")
-        return
-    for t in names:
-        with eng.connect() as conn:
-            cnt = conn.execute(
-                select(func.count()).select_from(
-                    Table(t, MetaData(), autoload_with=eng)
-                )
-            ).scalar_one()
-        typer.echo(f"{t}\t{cnt}")
-
-
-@inspect.command("schema", help="Show schema for a table (local).")
-def insp_schema(table: str, base_url: str = _base_url_opt()):
-    _ensure_admin(base_url)
-    create_all()
-    eng = get_engine()
-    insp = sa_inspect(eng)
-    if table not in insp.get_table_names():
-        raise typer.Exit(f"Unknown table: {table}")
-    cols = insp.get_columns(table)
-    pk = set(insp.get_pk_constraint(table).get("constrained_columns", []) or [])
-    header = f"{'name':20} {'type':20} {'nullable':8} {'pk':2} {'default'}"
-    typer.echo(header)
-    typer.echo("-" * len(header))
-    for c in cols:
-        name = c.get("name", "")
-        typ = str(c.get("type", ""))
-        nul = str(c.get("nullable", ""))
-        dfl = c.get("default", "")
-        ispk = "Y" if name in pk else ""
-        typer.echo(f"{name:20} {typ:20} {nul:8} {ispk:2} {dfl}")
-
-
 @inspect.command("show", help="Print rows from a table (local).")
 def insp_show(
     table: str,
-    limit: int = typer.Option(10, "--limit"),
+    limit: int = typer.Option(10, "--limit", "-l", "--l", "-limit"),
     base_url: str = _base_url_opt(),
 ):
     _ensure_admin(base_url)
@@ -279,37 +252,6 @@ def insp_show(
         raise typer.Exit(1)
     with eng.connect() as conn:
         rows = [dict(r._mapping) for r in conn.execute(select(tbl).limit(limit))]
-    if not rows:
-        typer.echo("(no rows)")
-        return
-    cols = list(rows[0].keys())
-    typer.echo("\t".join(cols))
-    for r in rows:
-        typer.echo("\t".join("" if r[c] is None else str(r[c]) for c in cols))
-
-
-@inspect.command(
-    "sql", help="Run a read-only SQL query (local). Use --write to allow writes."
-)
-def insp_sql(
-    query: str,
-    write: bool = typer.Option(False, "--write"),
-    base_url: str = _base_url_opt(),
-):
-    _ensure_admin(base_url)
-    q = (query or "").lstrip().lower()
-    if not write and not (q.startswith("select") or q.startswith("with")):
-        notify.error("Refusing non-SELECT without --write")
-        raise typer.Exit(1)
-    create_all()
-    eng = get_engine()
-    with eng.connect() as conn:
-        res = conn.execute(text(query))
-        try:
-            rows = res.mappings().all()
-        except Exception:
-            typer.echo("(ok)")
-            return
     if not rows:
         typer.echo("(no rows)")
         return

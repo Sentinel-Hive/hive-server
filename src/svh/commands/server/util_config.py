@@ -73,13 +73,13 @@ def _cfg() -> dict:
 def get_client_bind() -> Tuple[str, int]:
     s = _cfg().get("server", {})
     host = str(s.get("host", "0.0.0.0"))
-    port = int(s.get("client_port", 8000))
+    port = int(s.get("client_port", 5167))
     return host, port
 
 def get_db_bind() -> Tuple[str, int]:
     s = _cfg().get("server", {})
     host = str(s.get("host", "0.0.0.0"))
-    port = int(s.get("db_port", 8001))
+    port = int(s.get("db_port", 5169))
     return host, port
 
 def get_client_base() -> str:

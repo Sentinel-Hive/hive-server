@@ -100,7 +100,7 @@ The data ingestion endpoint accepts JSON data and stores it in the database.
 ### Prerequisites
 1. Start both servers:
 ```bash
-svh server start -d
+svh server start -dhttps://github.com/Sentinel-Hive/hive-server/pull/9/conflict?name=src%252Fsvh%252Fcommands%252Fserver%252Fclient_api%252Fmain.py&ancestor_oid=0a8d2b553cdf4bf11042cdaeef9177fa7274ffab&base_oid=e7c3cf257506fcdee5168a9fb0f6d000336b41f5&head_oid=42f935e35a729a8237db3ecf92190ee5d71a46c8
 ```
 
 2. Login to create a session (default credentials: admin/admin):
@@ -135,3 +135,20 @@ curl -X POST http://localhost:5167/data \
 {"success": true, "id": 2}
 ```
 
+### Firewall
+You can check firewall status with this command:
+```bash
+svh server status
+```
+You can start the firewall with this commnad: 
+```bash
+svh server -F
+
+or
+
+svh server firewall
+```
+You can start the server and the firewall at the same time with this commnad:
+```bash
+svh server start -c -F -d
+```
