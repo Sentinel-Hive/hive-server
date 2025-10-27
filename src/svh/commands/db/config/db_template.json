@@ -2,10 +2,12 @@
   "tables": [
     "users",
     "auth_tokens",
-    "events"
+    "datasets"
   ],
   "settings": {
     "echo": false,
     "future": true
-  }
+  },
+  "seed_admins": 1,
+  "seed_users": 4
 }
