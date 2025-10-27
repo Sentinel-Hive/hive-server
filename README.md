@@ -98,5 +98,5 @@ svh server firewall
 ```
 You can start the server and the firewall at the same time with this commnad:
 ```bash
-svh server start --configure-firewall -d
+svh server start -c -F -d
 ```

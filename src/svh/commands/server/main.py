@@ -6,7 +6,8 @@ from svh.commands.server.helper import load_config
 from svh.commands.server.cli_auth import attach_auth_commands
 from svh.commands.server.config import config, state
 from svh.commands.server.firewall import firewall_ssh_status, configure_firewall_from_config
-from svh import notify  # use centralized notifier
+from svh import notify  
+from typing import Optional  
 
 app = typer.Typer(help="Server management commands")
 
@@ -21,15 +22,28 @@ def start(
     service: str = typer.Option(
         "all", "--service", "-s", help="Service to start (client, db, or all)"
     ),
-    config: Path = typer.Option(
-        None, "--config", "-c", help="Path to configuration file", exists=True
+    # Use default config with -c
+    use_default_config: bool = typer.Option(
+        False, "--use-default-config", "-c", help="Use the built-in default config.yml"
+    ),
+    # Provide a custom config path with -C/--config
+    config_file: Optional[Path] = typer.Option(
+        None, "--config", "-C", help="Path to configuration file", exists=True
     ),
     detach: bool = typer.Option(False, "--detach", "-d", help="Run in detached mode"),
+    # Only -F (no long --configure-firewall)
     configure_firewall: bool = typer.Option(
-        False, "--configure-firewall/--no-configure-firewall", help="Configure firewall from config"
+        False, "-F", help="Configure firewall from config"
     ),
 ):
-    config_path = config or DEFAULT_CONFIG_PATH
+    # Determine config path
+    if use_default_config:
+        config_path = DEFAULT_CONFIG_PATH
+    elif config_file is not None:
+        config_path = config_file
+    else:
+        config_path = DEFAULT_CONFIG_PATH
+
     cfg = load_config(config_path)
     state.save_config_state(config_path)
     
@@ -41,7 +55,7 @@ def start(
             notify.error(f"Failed to configure firewall: {e}")
             notify.firewall("Continuing with service start...")
     else:
-        notify.firewall("Skipping firewall configuration (use --configure-firewall to apply config).")
+        notify.firewall("Skipping firewall configuration (use -F to apply config).")
     
     manage_service("start", service, cfg, detach=detach)
 
@@ -97,7 +111,10 @@ def status(
         if not result['details'].get('ssh_port_listening'):
             notify.error("SSH port is not listening")
         if config_path.exists():
-            notify.firewall(f"Run 'svh server start --configure-firewall -c {config_path}' to configure firewall from config")
+            if config_path == DEFAULT_CONFIG_PATH:
+                notify.firewall("Run 'svh server start -c -F -d' to configure firewall from default config")
+            else:
+                notify.firewall(f"Run 'svh server start -C {config_path} -F -d' to configure firewall from this config")
         raise typer.Exit(1)
 
 
