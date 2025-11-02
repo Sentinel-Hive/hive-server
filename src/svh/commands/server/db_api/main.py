@@ -1,36 +1,13 @@
 from __future__ import annotations
-from contextlib import asynccontextmanager
-from datetime import datetime
 
 from fastapi import FastAPI
-from sqlalchemy import update as sa_update
-from sqlalchemy.exc import OperationalError
 import platform
-from svh.commands.db.session import create_all, session_scope
-from svh.commands.db.models import AuthToken
 
 from .auth import router as auth_router
 from .users import router as users_router
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    create_all()
-
-    try:
-        with session_scope() as s:
-            s.execute(
-                sa_update(AuthToken)
-                .where(AuthToken.revoked_at.is_(None))
-                .values(revoked_at=datetime.utcnow())
-            )
-    except OperationalError:
-        pass
-
-    yield
-
-
-app = FastAPI(title="SVH DB API", lifespan=lifespan)
+app = FastAPI(title="SVH DB API")
 
 
 @app.get("/health")
@@ -46,9 +23,11 @@ def metadata():
         "python": platform.python_version(),
     }
 
+
 from .auth import router as auth_router
 from .users import router as users_router
 from .data import router as data_router
+
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(users_router, prefix="/users", tags=["users"])
 app.include_router(data_router, tags=["data"])

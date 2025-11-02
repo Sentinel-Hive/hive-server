@@ -18,8 +18,6 @@ from svh.commands.db.models import User, AuthToken
 router = APIRouter()
 
 
-# ---- helpers ----------------------------------------------------------------
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -67,8 +65,6 @@ def _resolve_token(token_str: Optional[str]) -> tuple[Optional[str], bool]:
         return (user.user_id, bool(user.is_admin))
 
 
-# ---- websocket endpoint -----------------------------------------------------
-
 @router.websocket("/websocket")
 async def websocket_endpoint(websocket: WebSocket):
     """
@@ -76,8 +72,7 @@ async def websocket_endpoint(websocket: WebSocket):
     then routes client messages by their 'type'.
     """
     token = websocket.query_params.get("token")
-    notify.websocket(
-        f"connect attempt: token={'present' if token else 'missing'}")
+    notify.websocket(f"connect attempt: token={'present' if token else 'missing'}")
 
     try:
         # Validate token *before* accepting
@@ -116,10 +111,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket_hub.broadcast(_make_popup(f"[Broadcast] {text}"))
                     continue
 
-                
-
                 # Unknown message type
-                await websocket.send_json({"type": "error", "detail": "Unknown message type"})
+                await websocket.send_json(
+                    {"type": "error", "detail": "Unknown message type"}
+                )
 
             except WebSocketDisconnect:
                 # Client disconnected
