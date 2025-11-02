@@ -5,7 +5,6 @@ from svh.commands.db.models import User, AuthToken
 from sqlalchemy import text, select
 import httpx
 from svh.commands.server.util_config import get_db_api_base_for_client
-from svh import notify
 
 router = APIRouter()
 
@@ -109,7 +108,6 @@ async def store_data(data: Dict[str, Any], user: User = Depends(verify_admin_tok
 
     try:
         # Pass JSON data to DB_Endpoint (DB API)
-        notify.info(f"{data}")
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{DB_API_URL}/data/store", json=data, timeout=10.0
