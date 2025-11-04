@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, status
-from typing import Any, Dict
+from fastapi import APIRouter, HTTPException, status, Query
+from typing import Any, Dict, Optional
 from svh.commands.db.session import session_scope
 from sqlalchemy import text
 from svh import notify, storage
+import httpx
 
 router = APIRouter()
 
@@ -60,4 +61,82 @@ async def store_data(data: Dict[str, Any]):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to store data: {str(e)}",
+        )
+
+
+@router.get("/data", status_code=status.HTTP_200_OK)
+async def get_data(
+    id: Optional[str] = Query(
+        None, description="ID of the stored item (omit to fetch all)"
+    )
+):
+    """
+    Retrieve stored data.
+    """
+    try:
+        with session_scope() as session:
+            if id is None:
+                q = text(
+                    """
+                    SELECT *
+                    FROM datasets
+                    ORDER BY added_at DESC, id DESC
+                    """
+                )
+                result = session.execute(q).fetchall()
+
+                def to_dict(r):
+                    added = r[3]
+                    try:
+                        added = added.isoformat()
+                    except Exception:
+                        pass
+                    return {
+                        "id": r[0],
+                        "dataset_name": r[1],
+                        "dataset_path": r[2],
+                        "added_at": added,
+                    }
+
+                return [to_dict(row) for row in result]
+            try:
+                item_id = int(id)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid id; must be an integer",
+                )
+            q = text(
+                """
+                SELECT id, dataset_name, dataset_path, added_at
+                FROM datasets
+                WHERE id = :id
+                """
+            )
+            row = session.execute(q, {"id": item_id}).fetchone()
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Item with id={item_id} not found",
+                )
+
+            added = row[3]
+            try:
+                added = added.isoformat()
+            except Exception:
+                pass
+
+            return {
+                "id": row[0],
+                "dataset_name": row[1],
+                "dataset_path": row[2],
+                "added_at": added,
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve data: {str(e)}",
         )
