@@ -30,10 +30,22 @@ attach_auth_commands(app)
 def main_callback(
     ctx: typer.Context,
     configure_firewall: bool = typer.Option(
-        False, "-F", help="Configure firewall (shortcut for 'firewall' command)"
+        False, "-F", help="Configure firewall (shortcut for 'firewall' command'"
+    ),
+    color: Optional[str] = typer.Option(
+        None, "-c", "--color", help="Set terminal accent color (choices: green, magenta, blue, red, yellow, cyan)"
     ),
 ):
     """Server management commands."""
+    # If color provided
+    if color:
+        try:
+            notify.set_accent_color(color)
+            notify.info(f"Accent color set to '{color}'.")
+        except Exception as e:
+            notify.error(f"Failed to set color '{color}': {e}")
+            raise typer.Exit(1)
+
     if configure_firewall and ctx.invoked_subcommand is None:
         # Redirect to firewall command
         ctx.invoke(firewall_cmd, config=None)

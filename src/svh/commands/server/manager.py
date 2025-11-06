@@ -30,6 +30,11 @@ def _handle_exit(selected_services: list, config: Dict) -> None:
     notify.server("Gracefully stopping running service(s)...")
     for s in reversed(selected_services):
         _stop_single_service(s, config)
+    # restore original color when services are stopped
+    try:
+        notify.reset_accent_to_default()
+    except Exception:
+        pass
     sys.exit(0)
 
 
@@ -65,5 +70,10 @@ def manage_service(
     elif action == "stop":
         for s in selected:
             _stop_single_service(s, config)
+        # restore original color when explicit stop completes
+        try:
+            notify.reset_accent_to_default()
+        except Exception:
+            pass
     else:
         notify.error(f"Unsupported action: {action}")
