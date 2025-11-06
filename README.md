@@ -151,12 +151,7 @@ Start both the API servers and configure the firewall from the built-in config (
 svh server start -cF -d
 ```
 
-Or, without detaching (foreground):
+Or, without detaching:
 ```bash
 svh server start -cF
-```
-
-To use a custom config file and configure the firewall:
-```bash
-svh server start -C /path/to/config.yml -cF -d
 ```
