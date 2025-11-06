@@ -48,5 +48,12 @@ class DataStore(Base):
     __tablename__ = "data_store"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False, index=True)
+    # Stored path for file 
+    filename = Column(String(255), nullable=False, index=True)
+    # JSON content
     content = Column(JSON, nullable=False)
+    # Hash of canonical JSON content; unique to prevent duplicates
+    data_hash = Column(String(64), nullable=False, unique=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
+    __table_args__ = (UniqueConstraint("data_hash", name="uq_data_store_data_hash"),)
