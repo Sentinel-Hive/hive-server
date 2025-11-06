@@ -2,8 +2,7 @@
   "tables": [
     "users",
     "auth_tokens",
-    "datasets",
-    "data_store"
+    "datasets"
   ],
   "settings": {
     "echo": false,
