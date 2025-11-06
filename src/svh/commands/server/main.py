@@ -30,7 +30,7 @@ attach_auth_commands(app)
 def main_callback(
     ctx: typer.Context,
     configure_firewall: bool = typer.Option(
-        False, "-F", help="Configure firewall (shortcut for 'firewall' command)"
+        False, "--configure-firewall", help="Configure firewall (shortcut for 'firewall' command)"
     ),
 ):
     """Server management commands."""
@@ -44,16 +44,24 @@ def start(
         "all", "--service", "-s", help="Service to start (client, db, or all)"
     ),
     use_default_config: bool = typer.Option(
-        False, "--use-default-config", "-c", help="Use the built-in default config.yml"
+        False, "--use-default-config", help="Use the built-in default config.yml"
     ),
     config_file: Optional[Path] = typer.Option(
         None, "--config", "-C", help="Path to configuration file", exists=True
     ),
     detach: bool = typer.Option(False, "--detach", "-d", help="Run in detached mode"),
     configure_firewall: bool = typer.Option(
-        False, "-F", help="Configure firewall from config"
+        False, "--configure-firewall", help="Configure firewall from config"
+    ),
+    combined_cF: bool = typer.Option(
+        False, "-cF", help="Shortcut: use the built-in default config and configure firewall"
     ),
 ):
+    # combined short (-cF) implies both behaviors
+    if combined_cF:
+        use_default_config = True
+        configure_firewall = True
+
     # Determine config path
     if use_default_config:
         config_path = DEFAULT_CONFIG_PATH
@@ -73,7 +81,7 @@ def start(
             notify.error(f"Failed to configure firewall: {e}")
             notify.firewall("Continuing with service start...")
     else:
-        notify.firewall("Skipping firewall configuration (use -F to apply config).")
+        notify.firewall("Skipping firewall configuration (use -cF to apply config).")
     
     manage_service("start", service, cfg, detach=detach)
 
@@ -130,9 +138,9 @@ def status(
             notify.error("SSH port is not listening")
         if config_path.exists():
             if config_path == DEFAULT_CONFIG_PATH:
-                notify.firewall("Run 'svh server start -c -F -d' to configure firewall from default config")
+                notify.firewall("Run 'svh server start -cF -d' to configure firewall from default config")
             else:
-                notify.firewall(f"Run 'svh server start -C {config_path} -F -d' to configure firewall from this config")
+                notify.firewall(f"Run 'svh server start -C {config_path} -cF -d' to configure firewall from this config")
         raise typer.Exit(1)
 
 

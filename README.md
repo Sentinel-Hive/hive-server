@@ -140,15 +140,23 @@ You can check firewall status with this command:
 ```bash
 svh server status
 ```
-You can start the firewall with this commnad: 
+
+You can start the firewall with the dedicated command:
 ```bash
-svh server -F
-
-or
-
 svh server firewall
 ```
-You can start the server and the firewall at the same time with this commnad:
+
+Start both the API servers and configure the firewall from the built-in config (detached/background):
 ```bash
-svh server start -c -F -d
+svh server start -cF -d
+```
+
+Or, without detaching (foreground):
+```bash
+svh server start -cF
+```
+
+To use a custom config file and configure the firewall:
+```bash
+svh server start -C /path/to/config.yml -cF -d
 ```

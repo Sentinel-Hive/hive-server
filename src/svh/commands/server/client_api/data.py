@@ -110,6 +110,7 @@ async def store_data(
 ):
     """
     Store JSON data in the database (admin only).
+    Returns id, name, filename and hash on success.
     """
     if not data:
         raise HTTPException(
@@ -118,7 +119,6 @@ async def store_data(
         )
     
     try:
-        # Pass JSON data to DB_Endpoint (DB API)
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{DB_API_URL}/data/store",
@@ -127,19 +127,27 @@ async def store_data(
             )
             
             if response.status_code != 201:
+                # attempt to surface DB API error detail when present
+                try:
+                    detail = response.json()
+                except Exception:
+                    detail = response.text
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="DB API failed to store data"
+                    detail=f"DB API failed to store data: {detail}"
                 )
             
             result = response.json()
-            return {"success": True, "id": result["id"]}
+            # Return the full metadata from DB API
+            return {"success": True, **result}
             
     except httpx.RequestError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to communicate with DB API: {str(e)}"
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

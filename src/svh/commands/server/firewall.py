@@ -97,6 +97,7 @@ def configure_firewall_from_config(config_path: str, ssh_port: Optional[int] = N
     firewall_cfg = (cfg or {}).get("firewall", {}) or {}
     ssh_cfg = (cfg or {}).get("ssh", {}) or {}
     ssh_port_cfg = (cfg or {}).get("ssh_port", {}) or {}
+    server_cfg = (cfg or {}).get("server", {}) or {}
 
     allowed_ports = _parse_allowed_ports(firewall_cfg.get("allowed_ports", []))
     
@@ -112,6 +113,20 @@ def configure_firewall_from_config(config_path: str, ssh_port: Optional[int] = N
     
     # Always allow SSH port (tcp)
     allowed_ports.add((effective_ssh_port, "tcp"))
+
+    # Ensure server API ports (client and db) are always allowed so firewall does not block services.
+    try:
+        client_port = int(server_cfg.get("client_port")) if server_cfg.get("client_port") is not None else None
+    except Exception:
+        client_port = None
+    try:
+        db_port = int(server_cfg.get("db_port")) if server_cfg.get("db_port") is not None else None
+    except Exception:
+        db_port = None
+    if client_port:
+        allowed_ports.add((client_port, "tcp"))
+    if db_port:
+        allowed_ports.add((db_port, "tcp"))
 
     os_name = platform.system().lower()
     try:
@@ -137,7 +152,11 @@ def configure_firewall_from_config(config_path: str, ssh_port: Optional[int] = N
             "username": ssh_cfg.get("username"),
             "password_set": bool(ssh_cfg.get("password")),
             "key_path": ssh_cfg.get("key_path"),
-        }
+        },
+        "server_ports": {
+            "client_port": client_port,
+            "db_port": db_port,
+         }
     }
 
 
@@ -156,6 +175,7 @@ def firewall_ssh_status(config_path: Optional[str] = None, ssh_port: Optional[in
         firewall_cfg = (cfg or {}).get("firewall", {}) or {}
         ssh_cfg = (cfg or {}).get("ssh", {}) or {}
         ssh_port_cfg = (cfg or {}).get("ssh_port", {}) or {}
+        server_cfg = (cfg or {}).get("server", {}) or {}
         expected_allowed = _parse_allowed_ports(firewall_cfg.get("allowed_ports", []))
         
         # Check both config formats
@@ -165,7 +185,20 @@ def firewall_ssh_status(config_path: Optional[str] = None, ssh_port: Optional[in
             effective_ssh_port = int(ssh_port_cfg.get("ssh", 22))
         else:
             effective_ssh_port = 22
-    
+        # add server ports to expected allowed set
+        try:
+            cport = int(server_cfg.get("client_port")) if server_cfg.get("client_port") is not None else None
+        except Exception:
+            cport = None
+        try:
+            dport = int(server_cfg.get("db_port")) if server_cfg.get("db_port") is not None else None
+        except Exception:
+            dport = None
+        if cport:
+            expected_allowed.add((cport, "tcp"))
+        if dport:
+            expected_allowed.add((dport, "tcp"))
+        
     # Override with custom ssh_port if provided
     if ssh_port is not None:
         effective_ssh_port = ssh_port
