@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
 """
-gen_ndjson_with_ports.py
-
-NDJSON generator that ALWAYS includes src_port and dest_port both in:
- - the inner stringified _raw JSON (if used), AND
- - the top-level result object (so frontends or mappers that read either place will see ports).
-
 Usage:
-    python gen_ndjson_with_ports.py [count] [--seed N]
+    python gen_ndjson.py [count] [--seed N]
 Example:
-    python gen_ndjson_with_ports.py 200 --seed 42 > sample.ndjson
+    python gen_ndjson.py 200 --seed 42 > sample.ndjson
 """
 
 import json
 import random
 import sys
 from datetime import datetime, timedelta
+from ..security import gen_userid
 
 COUNT = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 100
 SEED = None
@@ -31,14 +26,6 @@ APPS = [
     "SSH Daemon", "VPN Client", "HTTP Server", "Web App", "SFTP Service",
     "DB Proxy", "FTP Service", "Metrics Agent", "Custom App", "Load Balancer",
     "Firewall", "IDS", "DNS Server", "Mail Server", "NTP Server"
-]
-USERS = [
-    "alice", "bob", "carol", "dave", "eve", "frank", "gina", "harry",
-    "ida", "jane", "admin", "ops", "scanner", "unknown"
-]
-DESTS = [
-    "10.1.1.22","10.1.1.5","10.1.2.10","10.1.3.5","10.1.4.50",
-    "10.1.6.10","10.1.7.5","10.1.9.9","10.1.10.2","10.1.11.1","10.2.0.5"
 ]
 EVENT_TYPES = [
     ["ssh","login"], ["ssh","exec"], ["ssh","bruteforce"],
@@ -90,9 +77,9 @@ def make_inner(idn, app, user, src_ip, dest, etype, src_port, dest_port, reason=
 
 def make_record(i):
     app = random.choice(APPS)
-    user = random.choice(USERS) + "@example.com"
+    user = gen_userid() + "@sentinelhive.com"
     src_ip = rand_ip()
-    dest = random.choice(DESTS)
+    dest = rand_ip()
     et = random.choice(EVENT_TYPES)
     eventtype_out = et if random.random() < 0.85 else ",".join(et)
     cond = random.choice(CONDITIONAL)
