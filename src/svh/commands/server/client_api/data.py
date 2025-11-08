@@ -1,10 +1,14 @@
-from fastapi import APIRouter, HTTPException, Query, status, Header, Depends
-from typing import Any, Dict, Optional, List
-from svh.commands.db.session import session_scope
-from svh.commands.db.models import User, AuthToken
-from sqlalchemy import text, select
+from typing import Any, Dict, List, Optional
+
 import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import select, text
+
+from svh import notify
+from svh.commands.db.models import AuthToken, User
+from svh.commands.db.session import session_scope
 from svh.commands.server.util_config import get_db_api_base_for_client
+from svh.storage import read
 
 router = APIRouter()
 
@@ -189,6 +193,9 @@ async def get_data(
     include_file: bool = Query(
         False, description="Return the actual JSON stored at storage_path"
     ),
+    file_path: Optional[str] = Query(
+        None, description="Storage path of requested file"
+    ),
     user: User = Depends(verify_user_token),
 ):
     """
@@ -199,6 +206,13 @@ async def get_data(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one of include_record or include_file must be true.",
         )
+
+    if not include_record and include_file and file_path:
+        try:
+            content = read(file_path)
+            return {content}
+        except:
+            raise
 
     try:
         async with httpx.AsyncClient() as client:
@@ -227,11 +241,7 @@ async def get_data(
                 entry: Dict[str, Any] = {}
                 if include_record:
                     entry["record"] = record
-                # if include_file:
-                #     storage_path = (
-                #         record.get("storage_path") if isinstance(record, dict) else None
-                #     )
-                #     entry["data"] = await _read_storage_path(storage_path, client)
+
                 results.append(entry)
             if id:
                 if not results:

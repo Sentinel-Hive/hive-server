@@ -1,5 +1,6 @@
-from pathlib import Path
 import json
+from pathlib import Path
+
 from svh import notify
 
 # Determine project root relative to this file
@@ -23,3 +24,15 @@ def add(data):
 
     print(f"File saved to: {file_path}")
     return file_path
+
+
+def read(storage_path):
+    file_path = PROJECT_ROOT / storage_path
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            content = file.read()
+        return content
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        raise e
