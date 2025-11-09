@@ -5,20 +5,18 @@ Usage examples:
     python gen_ndjson.py
 
     # generate 200 records for only the Firewall and Web App combined
-    python gen_ndjson.py 200 --apps Firewall,Web-App > sample.ndjson
+    python gen_ndjson.py 200 --apps Firewall,Web App > sample.ndjson
 
     # generate 50 records per-app and write separate files (Firewall -> firewall.ndjson)
-    python gen_ndjson.py 50 --apps Firewall,Web-App --mode separate --out-dir ./datasets
+    python gen_ndjson.py 50 --apps Firewall,Web App --mode separate --out-dir ./datasets
 
-Options added:
+Options:
     --apps APP1,APP2  Limit generation to records for matching app names (case-insensitive substring).
     --mode combined|separate  If 'combined' (default), produce all matching records in one stream/file.
                               If 'separate', create one ndjson file per selected app (COUNT each).
     --out FILE        When used with --mode combined, write output to FILE instead of stdout.
     --out-dir DIR     When used with --mode separate, place per-app files into DIR (defaults to cwd).
     --seed N          Same as before: set RNG seed for reproducible output.
-
-This keeps backward-compatible defaults (100 records, no seed).
 """
 
 import argparse
@@ -89,10 +87,11 @@ def parse_args():
     p.add_argument("--mode", choices=("combined", "separate"), default="combined",
                    help="combined: one stream with records from any selected app (default)."
                         " separate: create one file per selected app (COUNT records each).")
+    datasets_dir = str(Path(__file__).resolve().parent.parent.parent / "datasets")
     p.add_argument("--out", type=str, default=None,
-                   help="Output file when --mode combined. If omitted, prints to stdout.")
+                   help="Output file when --mode combined. If omitted and output is not redirected, writes to datasets/output.ndjson")
     p.add_argument("--out-dir", type=str, 
-                   default=str(Path(__file__).resolve().parent.parent.parent / "datasets"),
+                   default=datasets_dir,
                    help="Directory to write files when --mode separate. Always uses project's datasets/ folder.")
     args = p.parse_args()
     return args
@@ -126,23 +125,23 @@ APPS = [
 ]
 # Map app (lowercase name substring) -> list of EVENT_TYPES proto keys to prefer
 APP_EVENT_MAP = {
-    "ssh": ["ssh", "auth"],
-    "ssh daemon": ["ssh", "auth"],
-    "http": ["http", "db", "auth"],
-    "http web app": ["http", "db", "auth"],
-    "web": ["http", "auth"],
-    "sftp": ["sftp", "file", "auth"],
-    "ftp": ["ftp", "file", "auth"],
-    "db": ["db", "tcp", "auth"],
-    "db proxy": ["db", "tcp", "auth"],
-    "dns": ["udp", "dns_query"],
-    "mail": ["smtp", "mail", "auth"],
-    "ntp": ["udp"],
-    "firewall": ["tcp", "udp", "alert", "ddos", "access"],
-    "ids": ["alert", "malware", "ddos", "scan", "mitm"],
-    "server events": ["system", "config", "process", "file", "auth"],
-    "system logs": ["system", "config", "process", "file", "auth"],
-    "alerts": ["alert", "security", "notice"],
+    "ssh": ["ssh", "auth", "user"],  # SSH focused on auth and user activities
+    "ssh daemon": ["ssh", "auth", "user", "privilege"],  # SSH with privilege escalation possibilities
+    "http": ["http", "auth", "access", "db"],  # HTTP with auth and access patterns
+    "http web app": ["http", "auth", "db", "api"],  # Web app specific patterns
+    "web": ["http", "auth", "api"],  # Generic web patterns
+    "sftp": ["sftp", "file", "auth", "transfer"],  # File transfer focus
+    "ftp": ["ftp", "file", "auth", "transfer"],  # File transfer focus
+    "db": ["db", "tcp", "auth", "query"],  # Database specific activities
+    "db proxy": ["db", "tcp", "auth", "query"],  # Database proxy patterns
+    "dns": ["udp", "dns_query", "system"],  # DNS specific activities
+    "mail": ["smtp", "mail", "auth", "phishing"],  # Mail with security focus
+    "ntp": ["udp", "system", "config"],  # NTP with system time focus
+    "firewall": ["tcp", "udp", "alert", "ddos", "access", "scan"],  # Network security
+    "ids": ["alert", "malware", "ddos", "scan", "mitm", "phishing"],  # Security detection
+    "server events": ["system", "config", "process", "file", "auth", "service"],  # Server operations
+    "system logs": ["system", "config", "process", "file", "auth", "service"],  # System operations
+    "alerts": ["alert", "security", "notice", "system", "auth"],  # General alerting
 }
 EVENT_TYPES = [
     # SSH
@@ -209,10 +208,47 @@ def iso_now_minus():
 
 def make_inner(idn, app, user, src_ip, dest, etype, src_port, dest_port, reason=None, resource_name=None, extras=None):
     """Construct inner event dict. extras can include app-specific fields (e.g., firewall action, IDS alert)."""
+    display_name = app
+    if isinstance(etype, list):
+        event_desc = etype[1] if len(etype) > 1 else etype[0]
+    else:
+        event_desc = etype.split(",")[1] if "," in etype else etype
+        
+    if extras and "message" in extras:
+        if "login" in extras["message"].lower():
+            display_name = f"{app} - Authentication"
+        elif "health check" in extras["message"].lower():
+            display_name = f"{app} - Health Monitor"
+        elif "maintenance" in extras["message"].lower():
+            display_name = f"{app} - Maintenance"
+        elif "crash" in extras["message"].lower():
+            display_name = f"{app} - Crash Report"
+        elif "usage" in extras["message"].lower():
+            display_name = f"{app} - Resource Monitor"
+        elif "scan" in extras["message"].lower():
+            display_name = f"{app} - Security Scan"
+    elif extras:
+        if "sshEvent" in extras:
+            display_name = f"{app} - {extras['sshEvent'].replace('_', ' ').title()}"
+        elif "httpMethod" in extras:
+            display_name = f"{app} - {extras['httpMethod']} Request"
+        elif "dbEvent" in extras:
+            display_name = f"{app} - {extras['dbEvent'].replace('_', ' ').title()}"
+        elif "firewallAction" in extras:
+            display_name = f"{app} - {extras['firewallAction'].title()} Traffic"
+        elif "alertCategory" in extras:
+            display_name = f"{app} - {extras['alertCategory'].replace('-', ' ').title()}"
+        elif "dnsDirection" in extras:
+            display_name = f"{app} - DNS {extras['dnsDirection'].title()}"
+    
+    # If no specific context was added, use the event type
+    if display_name == app:
+        display_name = f"{app} - {event_desc.replace('_', ' ').title()}"
+
     inner = {
         "id": idn,
         "createdDateTime": iso_now_minus(),
-        "appDisplayName": app,
+        "appDisplayName": display_name,
         "userPrincipalName": user,
         "ipAddress": src_ip,
         "dest": dest,
@@ -269,7 +305,6 @@ def make_record_for_app(i, app_override=None):
                     if et_proto == proto:
                         candidates.append(et)
 
-        # 2) If mapping produced nothing, fall back to previous heuristic
         if not candidates:
             for et in EVENT_TYPES:
                 proto = et[0] if isinstance(et, list) else (et.split(",")[0] if isinstance(et, str) else "")
@@ -294,7 +329,6 @@ def make_record_for_app(i, app_override=None):
                 elif ("alerts" in a_low or a_low == "alerts") and proto == "alert":
                     candidates.append(et)
 
-        # 3) final fallback: anything
         if not candidates:
             return random.choice(EVENT_TYPES)
 
@@ -313,15 +347,157 @@ def make_record_for_app(i, app_override=None):
     if app.lower().startswith("ssh"):
         dest_port = 22
         src_port = random.randint(1024, 65535)
+        ssh_scenario = random.random()
+        if ssh_scenario < 0.3:  # 30% login attempts
+            extras["sshEvent"] = "login_attempt"
+            if random.random() < 0.8:  # 80% success rate
+                extras["message"] = f"Successful login from {src_ip}"
+                et = ["ssh", "login"]
+            else:
+                extras["message"] = f"Failed login attempt from {src_ip}"
+                et = ["ssh", "bruteforce"] if random.random() < 0.4 else ["auth", "login_failed"]
+        elif ssh_scenario < 0.5:  # 20% command execution
+            extras["sshEvent"] = "command"
+            extras["message"] = "Remote command execution"
+            et = ["ssh", "exec"]
+        elif ssh_scenario < 0.7:  # 20% file operations
+            extras["sshEvent"] = "file_operation"
+            op = random.choice(["read", "write", "delete"])
+            extras["message"] = f"SSH file {op} operation"
+            et = ["file", op]
+        elif ssh_scenario < 0.85:  # 15% privileged operations
+            extras["sshEvent"] = "privilege_escalation"
+            extras["message"] = "Privilege escalation attempt"
+            if random.random() < 0.7:
+                extras["status"] = {"failureReason": "Permission denied"}
+            et = ["privilege", "escalation"]
+        else:  # 15% session management
+            extras["sshEvent"] = "session"
+            extras["message"] = random.choice([
+                "Session terminated",
+                "Session timeout",
+                "Connection closed",
+                "New session established"
+            ])
+            et = ["ssh", "session"]
+        eventtype_out = et if random.random() < 0.85 else ",".join(et)
     elif "http" in app.lower() or "web" in app.lower():
         dest_port = random.choice([80, 8080, 8443, 443])
         src_port = random.randint(1024, 65535)
+        web_scenario = random.random()
+        if web_scenario < 0.5:  # 50% normal requests
+            method = random.choice(["GET", "POST", "PUT", "DELETE"])
+            path = random.choice([
+                "/api/v1/users",
+                "/api/v1/data",
+                "/api/v1/auth",
+                "/dashboard",
+                "/login",
+                "/static/assets",
+                "/health"
+            ])
+            extras["httpMethod"] = method
+            extras["path"] = path
+            extras["message"] = f"{method} {path}"
+            status = random.choices([200, 201, 400, 401, 403, 404, 500], 
+                                 weights=[70, 10, 5, 5, 5, 3, 2])[0]
+            extras["statusCode"] = status
+            if status >= 400:
+                et = ["http", "error"]
+            else:
+                et = ["http", method.lower()]
+        elif web_scenario < 0.7:  # 20% auth related
+            auth_type = random.choice(["Basic", "Bearer", "JWT"])
+            extras["authType"] = auth_type
+            if random.random() < 0.7:
+                extras["message"] = "Successful authentication"
+                extras["statusCode"] = 200
+                et = ["auth", "login_success"]
+            else:
+                extras["message"] = "Authentication failed"
+                extras["statusCode"] = 401
+                et = ["auth", "login_failed"]
+        elif web_scenario < 0.85:  # 15% potential attacks
+            attack_type = random.random()
+            if attack_type < 0.4:
+                extras["message"] = "SQL injection attempt detected"
+                extras["path"] = "/api/v1/users?id=1' OR '1'='1"
+                et = ["http", "sql_injection"]
+            elif attack_type < 0.7:
+                extras["message"] = "XSS attempt detected"
+                extras["path"] = "/comment?text=<script>alert(1)</script>"
+                et = ["http", "xss_attempt"]
+            elif attack_type < 0.9:
+                extras["message"] = "CSRF attempt detected"
+                et = ["http", "csrf_attempt"]
+            else:
+                extras["message"] = "Directory traversal attempt"
+                extras["path"] = "../../etc/passwd"
+                et = ["http", "directory_traversal"]
+            extras["statusCode"] = 403
+        else:  # 15% performance/errors
+            perf_scenario = random.random()
+            if perf_scenario < 0.6:
+                extras["message"] = "Slow request detected"
+                extras["responseTime"] = random.randint(5000, 15000)
+                et = ["http", "performance"]
+            else:
+                extras["message"] = "Internal server error"
+                extras["statusCode"] = 500
+                et = ["http", "error"]
+        eventtype_out = et if random.random() < 0.85 else ",".join(et)
     elif "sftp" in app.lower():
         dest_port = random.choice([21, 2022])
         src_port = random.randint(1024, 65535)
-    elif "db proxy" in app.lower() or "db proxy" in app.lower():
-        dest_port = 3306
+    elif "db proxy" in app.lower() or "db proxy" in app.lower() or "db" in app.lower():
+        dest_port = random.choice([3306, 5432, 1433, 27017])  # MySQL, PostgreSQL, MSSQL, MongoDB
         src_port = random.randint(1024, 65535)
+        db_scenario = random.random()
+        if db_scenario < 0.4:  # 40% normal queries
+            extras["dbEvent"] = "query"
+            query_type = random.choice(["SELECT", "INSERT", "UPDATE", "DELETE"])
+            table = random.choice(["users", "data", "logs", "events", "config"])
+            extras["message"] = f"{query_type} operation on {table}"
+            extras["queryType"] = query_type
+            extras["table"] = table
+            if random.random() < 0.1:  # 10% chance of slow query
+                extras["queryTime"] = random.randint(1000, 5000)
+                et = ["db", "slow_query"]
+            else:
+                extras["queryTime"] = random.randint(1, 999)
+                et = ["db", "query"]
+        elif db_scenario < 0.6:  # 20% auth/access
+            extras["dbEvent"] = "auth"
+            if random.random() < 0.7:
+                extras["message"] = "Database authentication successful"
+                et = ["db", "auth_success"]
+            else:
+                extras["message"] = "Database authentication failed"
+                extras["status"] = {"failureReason": "Invalid credentials"}
+                et = ["db", "auth_fail"]
+        elif db_scenario < 0.8:  # 20% schema/admin
+            extras["dbEvent"] = "admin"
+            admin_op = random.choice([
+                "Schema modification",
+                "Index creation",
+                "User permission change",
+                "Configuration update"
+            ])
+            extras["message"] = admin_op
+            et = ["db", "admin"]
+        else:  # 20% potential issues
+            extras["dbEvent"] = "issue"
+            issue = random.random()
+            if issue < 0.4:
+                extras["message"] = "Unauthorized access attempt"
+                et = ["db", "unauthorized_access"]
+            elif issue < 0.7:
+                extras["message"] = "Connection limit reached"
+                et = ["db", "resource_limit"]
+            else:
+                extras["message"] = "Database deadlock detected"
+                et = ["db", "error"]
+        eventtype_out = et if random.random() < 0.85 else ",".join(et)
     elif "ftp" in app.lower() and "sftp" not in app.lower():
         dest_port = random.choice([21, 2022])
         src_port = random.randint(1024, 65535)
@@ -347,9 +523,55 @@ def make_record_for_app(i, app_override=None):
         service_ports = [22, 80, 443, 8080, 8443, 21, 2022, 3306, 53, 123, 25, 465, 110]
         dest_port = random.choice(service_ports)
         src_port = random.randint(1024, 65535)
-        extras["firewallAction"] = random.choices(["allowed","denied","dropped"], weights=[70,20,10])[0]
-        if extras["firewallAction"] != "allowed" and random.random() < 0.6:
-            extras["actionReason"] = random.choice(["blocked by policy","rate limit","signature match","invalid checksum"]) 
+        fw_scenario = random.random()
+        
+        if fw_scenario < 0.6:  # 60% normal traffic filtering
+            extras["firewallAction"] = random.choices(["allowed", "denied", "dropped"], weights=[80,15,5])[0]
+            protocol = "TCP" if dest_port not in [53, 123] else "UDP"
+            extras["protocol"] = protocol
+            extras["message"] = f"{protocol} {src_ip}:{src_port} -> {dest}:{dest_port}"
+            if extras["firewallAction"] != "allowed":
+                extras["actionReason"] = random.choice([
+                    "blocked by policy",
+                    "rate limit exceeded",
+                    "invalid packet",
+                    "unauthorized source"
+                ])
+            et = ["tcp" if protocol == "TCP" else "udp", "connect"]
+        elif fw_scenario < 0.75:  # 15% port scans
+            extras["firewallAction"] = "dropped"
+            extras["scanType"] = random.choice(["SYN", "FIN", "XMAS", "NULL"])
+            extras["message"] = f"Port scan detected from {src_ip}"
+            extras["actionReason"] = f"{extras['scanType']} scan detected"
+            et = ["tcp", "scan"]
+        elif fw_scenario < 0.85:  # 10% DDoS
+            extras["firewallAction"] = "dropped"
+            ddos_type = random.choice(["SYN flood", "UDP flood", "ICMP flood", "HTTP flood"])
+            extras["attackType"] = ddos_type
+            extras["message"] = f"{ddos_type} attack detected"
+            extras["packetRate"] = random.randint(10000, 1000000)
+            et = ["ddos", "flood"]
+        else:  # 15% other security events
+            extras["firewallAction"] = "dropped"
+            sec_event = random.random()
+            if sec_event < 0.4:
+                extras["message"] = "IP spoofing attempt detected"
+                et = ["mitm", "spoof"]
+            elif sec_event < 0.7:
+                extras["message"] = "Invalid TCP flags combination"
+                et = ["tcp", "invalid"]
+            else:
+                extras["message"] = "Blacklisted IP detected"
+                et = ["access", "denied"]
+            extras["actionReason"] = extras["message"]
+            
+        # Add severity for security events
+        if extras["firewallAction"] != "allowed":
+            extras["severity"] = random.choices(
+                ["low", "medium", "high", "critical"],
+                weights=[40, 30, 20, 10]
+            )[0]
+        eventtype_out = et if random.random() < 0.85 else ",".join(et)
     elif "ids" in app.lower():
         service_ports = [22, 80, 443, 8080, 8443, 21, 2022, 3306, 53, 123, 25]
         dest_port = random.choice(service_ports)
@@ -397,27 +619,38 @@ def make_record_for_app(i, app_override=None):
         extras["logLevel"] = random.choice(["INFO","NOTICE","WARN","ERROR","CRITICAL"])
         svc = random.choice(["svh-server","nginx","postgres","redis","cron","systemd","sshd"])
         extras["serviceName"] = svc
-        # pick a realistic message
-        if random.random() < 0.15:
+        # pick a realistic message and matching event type
+        msg_type = random.random()
+        if msg_type < 0.15:
             extras["message"] = "Scheduled maintenance window started"
             extras["alertType"] = "maintenance"
             extras["scheduled"] = True
             extras["durationMinutes"] = random.choice([30,60,120,240])
-        elif random.random() < 0.1:
+            et = ["system", "maintenance"]
+        elif msg_type < 0.25:
             extras["message"] = "Unplanned service crash detected"
             extras["alertType"] = "service_crash"
             extras["scheduled"] = False
+            et = ["system", "service_stop"]
+        elif msg_type < 0.45:
+            extras["message"] = f"{svc} restarted successfully"
+            et = ["system", "service_start"]
+        elif msg_type < 0.65:
+            extras["message"] = f"{svc} failed health check"
+            et = ["system", "service_stop"]
+        elif msg_type < 0.85:
+            extras["message"] = f"High CPU usage detected on host: {random.randint(60,98)}%"
+            et = ["system", "resource_alert"]
+        elif msg_type < 0.95:
+            extras["message"] = f"Disk usage exceeded threshold on /var: {random.randint(80,99)}%"
+            et = ["system", "resource_alert"]
         else:
-            extras["message"] = random.choice([
-                f"{svc} restarted successfully",
-                f"{svc} failed health check",
-                f"High CPU usage detected on host: {random.randint(60,98)}%",
-                f"Disk usage exceeded threshold on /var: {random.randint(80,99)}%",
-                f"User login failed for user {gen_userid()}"
-            ])
+            extras["message"] = f"User login failed for user {gen_userid()}"
+            et = ["system", "auth_fail"]
         extras["uptimeSeconds"] = random.randint(60, 60*60*24*30)
         extras["cpuPercent"] = round(random.uniform(0.5, 98.0), 1)
         extras["memoryPercent"] = round(random.uniform(0.5, 98.0), 1)
+        eventtype_out = et if random.random() < 0.85 else ",".join(et)
     else:
         # fallback: pick reasonable port
         proto = et[0] if isinstance(et, list) else (et.split(",")[0] if isinstance(et, str) else "tcp")
@@ -523,8 +756,14 @@ def main():
 
     if args.mode == "combined":
         outfh = None
-        if args.out:
+        # If output is not being redirected and no --out specified, use datasets folder
+        if not args.out and sys.stdout.isatty():
+            os.makedirs(args.out_dir, exist_ok=True)
+            output_path = os.path.join(args.out_dir, "output.ndjson")
+            outfh = open(output_path, "w", encoding="utf-8")
+        elif args.out:
             outfh = open(args.out, "w", encoding="utf-8")
+        
         target_print = (lambda s: outfh.write(s + "\n")) if outfh else (lambda s: print(s))
         for i in range(1, COUNT+1):
             app_choice = random.choice(selected_apps)
@@ -532,12 +771,12 @@ def main():
             target_print(json.dumps(rec, ensure_ascii=False))
         if outfh:
             outfh.close()
-            print(f"Wrote combined output to {args.out}", file=sys.stderr)
+            path_msg = args.out if args.out else output_path
+            print(f"Wrote combined output to {path_msg}", file=sys.stderr)
     else:
         out_dir = args.out_dir or os.getcwd()
         os.makedirs(out_dir, exist_ok=True)
         for app in selected_apps:
-            # slugify app name for filename
             slug = "".join([c if c.isalnum() else "_" for c in app]).lower()
             path = os.path.join(out_dir, f"{slug}.ndjson")
             with open(path, "w", encoding="utf-8") as fh:
