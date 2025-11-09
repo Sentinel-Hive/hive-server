@@ -5,10 +5,10 @@ Usage examples:
     python gen_ndjson.py
 
     # generate 200 records for only the Firewall and Web App combined
-    python gen_ndjson.py 200 --apps Firewall,Web App > sample.ndjson
+    python gen_ndjson.py 200 --apps Firewall,Web-App > sample.ndjson
 
     # generate 50 records per-app and write separate files (Firewall -> firewall.ndjson)
-    python gen_ndjson.py 50 --apps Firewall,Web App --mode separate --out-dir ./datasets
+    python gen_ndjson.py 50 --apps Firewall,Web-App --mode separate --out-dir ./datasets
 
 Options added:
     --apps APP1,APP2  Limit generation to records for matching app names (case-insensitive substring).
