@@ -152,3 +152,28 @@ You can start the server and the firewall at the same time with this commnad:
 ```bash
 svh server start -c -F -d
 ```
+
+
+### Changing the ports (SSH)
+You can change the port to the SSH with this command:
+```bash
+svh server config edit
+```
+Then go to the SSH line and change the port to whatever.
+
+After run the firewall command to change the firewall settings:
+```bash
+svh server firewall
+```
+
+After verify with:
+```bash
+svh server status
+```
+
+To change the client and DB ports use:
+```bash
+svh server config edit
+```
+
+Then change the port. 
