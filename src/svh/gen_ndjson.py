@@ -206,66 +206,6 @@ def iso_now_minus():
     dt = datetime.now(timezone.utc) - timedelta(minutes=random.randint(0, 60*24*365))
     return dt.replace(microsecond=0).isoformat()
 
-def make_inner(idn, app, user, src_ip, dest, etype, src_port, dest_port, reason=None, resource_name=None, extras=None):
-    """Construct inner event dict. extras can include app-specific fields (e.g., firewall action, IDS alert)."""
-    display_name = app
-    if isinstance(etype, list):
-        event_desc = etype[1] if len(etype) > 1 else etype[0]
-    else:
-        event_desc = etype.split(",")[1] if "," in etype else etype
-        
-    if extras and "message" in extras:
-        if "login" in extras["message"].lower():
-            display_name = f"{app} - Authentication"
-        elif "health check" in extras["message"].lower():
-            display_name = f"{app} - Health Monitor"
-        elif "maintenance" in extras["message"].lower():
-            display_name = f"{app} - Maintenance"
-        elif "crash" in extras["message"].lower():
-            display_name = f"{app} - Crash Report"
-        elif "usage" in extras["message"].lower():
-            display_name = f"{app} - Resource Monitor"
-        elif "scan" in extras["message"].lower():
-            display_name = f"{app} - Security Scan"
-    elif extras:
-        if "sshEvent" in extras:
-            display_name = f"{app} - {extras['sshEvent'].replace('_', ' ').title()}"
-        elif "httpMethod" in extras:
-            display_name = f"{app} - {extras['httpMethod']} Request"
-        elif "dbEvent" in extras:
-            display_name = f"{app} - {extras['dbEvent'].replace('_', ' ').title()}"
-        elif "firewallAction" in extras:
-            display_name = f"{app} - {extras['firewallAction'].title()} Traffic"
-        elif "alertCategory" in extras:
-            display_name = f"{app} - {extras['alertCategory'].replace('-', ' ').title()}"
-        elif "dnsDirection" in extras:
-            display_name = f"{app} - DNS {extras['dnsDirection'].title()}"
-    
-    # If no specific context was added, use the event type
-    if display_name == app:
-        display_name = f"{app} - {event_desc.replace('_', ' ').title()}"
-
-    inner = {
-        "id": idn,
-        "createdDateTime": iso_now_minus(),
-        "appDisplayName": display_name,
-        "userPrincipalName": user,
-        "ipAddress": src_ip,
-        "dest": dest,
-        "eventtype": etype,
-        "src_port": src_port,
-        "dest_port": dest_port,
-    }
-    if resource_name:
-        inner["resourceDisplayName"] = resource_name
-    if reason:
-        inner["status"] = {"failureReason": reason}
-    if extras and isinstance(extras, dict):
-        # merge extras into inner (app-specific fields)
-        for k, v in extras.items():
-            inner[k] = v
-    return inner
-
 def make_record(i):
     return make_record_for_app(i, None)
 
@@ -399,13 +339,50 @@ def make_record_for_app(i, app_override=None):
             extras["httpMethod"] = method
             extras["path"] = path
             extras["message"] = f"{method} {path}"
-            status = random.choices([200, 201, 400, 401, 403, 404, 500], 
-                                 weights=[70, 10, 5, 5, 5, 3, 2])[0]
+            # Define status code ranges and their probabilities
+            status_ranges = {
+                "success": ([200, 201, 202, 204], 70),  # Success responses
+                "redirect": ([301, 302, 304, 307, 308], 10),  # Redirects
+                "client_error": ([400, 401, 403, 404, 405, 429], 15),  # Client errors
+                "server_error": ([500, 501, 502, 503, 504, 505], 5)  # Server errors
+            }
+            
+            # Choose status code category based on weights
+            category = random.choices(list(status_ranges.keys()),
+                                   weights=[w for _, w in status_ranges.values()])[0]
+            status = random.choice(status_ranges[category][0])
+            
             extras["statusCode"] = status
-            if status >= 400:
-                et = ["http", "error"]
-            else:
+            extras["statusCategory"] = category
+            
+            # Map status codes to event types and severities
+            if status < 300:
                 et = ["http", method.lower()]
+                extras["severity"] = "none"
+            elif status < 400:
+                et = ["http", "redirect"]
+                extras["severity"] = "none"
+            elif status < 500:
+                if status == 401:
+                    et = ["http", "unauthorized"]
+                    extras["severity"] = "medium"
+                elif status == 403:
+                    et = ["http", "forbidden"]
+                    extras["severity"] = "medium"
+                elif status == 404:
+                    et = ["http", "not_found"]
+                    extras["severity"] = "low"
+                elif status == 429:
+                    et = ["http", "rate_limit"]
+                    extras["severity"] = "medium"
+                else:
+                    et = ["http", "client_error"]
+                    extras["severity"] = "low"
+            else:
+                et = ["http", "server_error"]
+                extras["severity"] = "high"
+                if status == 503:
+                    extras["severity"] = "critical"  # Service unavailable is often critical
         elif web_scenario < 0.7:  # 20% auth related
             auth_type = random.choice(["Basic", "Bearer", "JWT"])
             extras["authType"] = auth_type
@@ -416,6 +393,7 @@ def make_record_for_app(i, app_override=None):
             else:
                 extras["message"] = "Authentication failed"
                 extras["statusCode"] = 401
+                extras["statusCategory"] = "client_error"
                 et = ["auth", "login_failed"]
         elif web_scenario < 0.85:  # 15% potential attacks
             attack_type = random.random()
@@ -435,6 +413,7 @@ def make_record_for_app(i, app_override=None):
                 extras["path"] = "../../etc/passwd"
                 et = ["http", "directory_traversal"]
             extras["statusCode"] = 403
+            extras["statusCategory"] = "client_error"
         else:  # 15% performance/errors
             perf_scenario = random.random()
             if perf_scenario < 0.6:
@@ -444,6 +423,7 @@ def make_record_for_app(i, app_override=None):
             else:
                 extras["message"] = "Internal server error"
                 extras["statusCode"] = 500
+                extras["statusCategory"] = "server_error"
                 et = ["http", "error"]
         eventtype_out = et if random.random() < 0.85 else ",".join(et)
     elif "sftp" in app.lower():
@@ -692,49 +672,78 @@ def make_record_for_app(i, app_override=None):
     if not reason and random.random() < 0.12:
         reason = random.choice(ATTACK_REASONS)
 
-    inner = make_inner(idn, app, user, src_ip, dest, et, src_port, dest_port, reason, resource, extras)
+    # Determine severity based on various factors
+    severity = "none"
+    if is_attack:
+        severity = random.choices(["high", "critical"], weights=[60, 40])[0]
+    elif "error" in str(et).lower() or "fail" in str(et).lower():
+        severity = random.choices(["medium", "high"], weights=[70, 30])[0]
+    elif "warning" in str(et).lower():
+        severity = "medium"
+    
+    # Determine status based on scenario
+    if "success" in str(et).lower() or (extras and "statusCode" in extras and extras["statusCode"] < 400):
+        status = "success"
+    elif is_attack or "fail" in str(et).lower() or (extras and "statusCode" in extras and extras["statusCode"] >= 400):
+        status = "fail"
+    elif "warning" in str(et).lower():
+        status = "warning"
+    else:
+        status = "info"
+
+    # Convert eventtype to string if it's a list
+    if isinstance(et, list):
+        et = ".".join(et)
+
+    # Construct message
+    message = None
+    if extras and "message" in extras:
+        message = extras["message"]
+    elif reason:
+        message = reason
+    else:
+        # Create a basic message if none exists
+        message = f"{app} event: {et}"
 
     result = {
+        "id": idn,
+        "app": app,
+        "evt_type": et,
+        "message": message,
+        "timestamp": iso_now_minus(),
+        "src_ip": src_ip,
+        "dest_ip": dest,
+        "user": user,
+        "severity": severity,
         "src_port": src_port,
         "dest_port": dest_port,
-        "_time": inner["createdDateTime"],
-        "conditionalAccessStatus": cond,
-        "riskLevel": risk,
-        "host": host,
-        "appDisplayName": app,
-        "ipAddress": src_ip,
-        "dest": dest,
-        "userPrincipalName": user
+        "status": status,
+        "host": f"{random.choice(HOST_PREFIXES)}-{random.randint(1,50)}"
     }
 
-    # include any inner status if present
-    if inner.get("status") and random.random() < 0.4:
-        result["status"] = inner["status"]
+    # Add HTTP-specific fields if they exist
+    if "statusCode" in extras:
+        result["http_status_code"] = extras["statusCode"]
+        # Set status based on code if not explicitly set
+        if "statusCategory" in extras:
+            result["status"] = extras["statusCategory"]
+        else:
+            code = extras["statusCode"]
+            if code < 300:
+                result["status"] = "success"
+            elif code < 400:
+                result["status"] = "redirect"
+            elif code < 500:
+                result["status"] = "client_error"
+            else:
+                result["status"] = "server_error"
+        
+    # Include other relevant HTTP fields if they exist
+    for field in ["httpMethod", "path", "responseTime", "authType"]:
+        if field in extras:
+            result[field] = extras[field]
 
-    if extras and isinstance(extras, dict):
-        for k in extras:
-            if k not in result:
-                result[k] = inner.get(k)
-
-    # if extras include IDS/Firewall fields, promote to top-level for easier parsing
-    for k in ("firewallAction", "actionReason", "alertCategory", "severity", "alert", "dnsDirection"):
-        if k in inner:
-            result[k] = inner[k]
-
-    use_raw = random.random() < 0.45
-    if use_raw:
-        result["_raw"] = json.dumps(inner, separators=(",",":"), ensure_ascii=False)
-        result["eventtype"] = eventtype_out if isinstance(eventtype_out, str) else eventtype_out
-    else:
-        for k, v in inner.items():
-            result[k] = v
-        if isinstance(result.get("eventtype"), list) and random.random() < 0.2:
-            result["eventtype"] = ",".join(result["eventtype"])
-
-    if is_attack:
-        result["threatIndicator"] = "attack"
-
-    return {"result": result}
+    return result
 
 def main():
     # Determine selected apps based on --apps patterns (case-insensitive substring match)
