@@ -25,7 +25,7 @@ venv/
 *.log
 
 # Datasets
-datasets/*
+storage/*
 
 # Alembic
 migrations/versions/*.pyc
