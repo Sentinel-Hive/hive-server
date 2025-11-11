@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import Any, Callable, List, Optional
-from dataclasses import dataclass, field
+from typing import Callable, List
+from dataclasses import dataclass
 
 from fastapi import WebSocket
 from svh import notify
@@ -27,10 +27,8 @@ class WebsocketHub:
         Add a websocket to the active connection list with its metadata.
         Call this *after* websocket.accept() succeeds.
         """
-        self._conns.append(Connection(
-            ws=websocket, user_id=user_id, is_admin=is_admin))
-        notify.websocket(
-            f"connected (clients={len(self._conns)}, admin={is_admin})")
+        self._conns.append(Connection(ws=websocket, user_id=user_id, is_admin=is_admin))
+        notify.websocket(f"connected (clients={len(self._conns)}, admin={is_admin})")
 
     def disconnect(self, websocket: WebSocket) -> None:
         """
@@ -71,13 +69,17 @@ class WebsocketHub:
         target = set(user_ids or [])
         await self._broadcast_filtered(lambda c: c.user_id in target, message)
 
-    async def broadcast_where(self, predicate: Callable[[Connection], bool], message: dict) -> None:
+    async def broadcast_where(
+        self, predicate: Callable[[Connection], bool], message: dict
+    ) -> None:
         """
         Generic filter-based broadcast.
         """
         await self._broadcast_filtered(predicate, message)
 
-    async def _broadcast_filtered(self, predicate: Callable[[Connection], bool], message: dict) -> None:
+    async def _broadcast_filtered(
+        self, predicate: Callable[[Connection], bool], message: dict
+    ) -> None:
         """
         Internal helper: send JSON to all connections matching predicate.
         Drop any dead connections.

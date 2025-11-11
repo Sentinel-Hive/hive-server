@@ -19,8 +19,6 @@ from svh.commands.db.models import User, AuthToken
 router = APIRouter()
 
 
-# ---- helpers ----------------------------------------------------------------
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -90,8 +88,6 @@ async def _periodic_heartbeat(websocket: WebSocket, token: Optional[str], interv
             break
 
 
-# ---- websocket endpoint -----------------------------------------------------
-
 @router.websocket("/websocket")
 async def websocket_endpoint(websocket: WebSocket):
     """
@@ -100,8 +96,7 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     token = websocket.query_params.get("token")
     heartbeat_task = None
-    notify.websocket(
-        f"connect attempt: token={'present' if token else 'missing'}")
+    notify.websocket(f"connect attempt: token={'present' if token else 'missing'}")
 
     try:
         # Validate token *before* accepting
@@ -150,7 +145,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
 
                 # Unknown message type
-                await websocket.send_json({"type": "error", "detail": "Unknown message type"})
+                await websocket.send_json(
+                    {"type": "error", "detail": "Unknown message type"}
+                )
 
             except WebSocketDisconnect:
                 # Client disconnected
