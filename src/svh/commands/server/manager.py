@@ -2,11 +2,9 @@ import signal
 import sys
 import platform
 import time
-import asyncio
 from typing import Dict
 from svh import notify
 from svh.commands.server import crud
-from svh.commands.server.client_api.websocket.hub import websocket_hub
 
 SERVICES = ["client", "db"]
 
@@ -30,27 +28,10 @@ def _stop_single_service(service: str, config: Dict) -> None:
 
 def _handle_exit_graceful(selected_services: list, config: Dict) -> None:
     """Gracefully stop services and close websocket connections."""
-    notify.server("Recevied shudown signal - initiation graceful shutdown...")
+    notify.server("Received shutdown signal - initiating graceful shutdown...")
 
-    # If client service is running, disconnect websocket clients first
-    if "client" in selected_services:
-        try:
-            notify.server("Disconnecting all active websocket clients...")
-
-            # Create event loop
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-            # Shudown websocket hub
-            loop.run_until_complete(websocket_hub.shutdown())
-            notify.server("All websocket clients disconnected.")
-        except Exception as e:
-            notify.error(f"Error during websocket shutdown: {e}")
-
-    # Stop services
+    # Stop services - each service's FastAPI lifespan handler will handle
+    # graceful websocket disconnection before the process terminates
     notify.server("Stopping running service(s)...")
     for s in reversed(selected_services):
         _stop_single_service(s, config)
@@ -66,6 +47,10 @@ def manage_service(
     if action == "start":
         for s in selected:
             _start_single_service(s, config, detach)
+            # In non-detached mode, add a small delay to let child process startup
+            # messages flush before starting the next service
+            if not detach:
+                time.sleep(0.5)
 
         if detach:
             notify.server(f"{', '.join(selected)} server(s) started in detached mode.")
