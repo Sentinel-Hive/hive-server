@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, Set, Tuple
 import json
 from typing import Optional
 import shutil
+import sys
 
 try:
     import yaml
@@ -13,31 +14,57 @@ except Exception:
     notify.error("PyYAML is required to load firewall configuration. Please install 'pyyaml'.")
 
 
+def _run_elevated_powershell(script: str) -> subprocess.CompletedProcess:
+    """
+    Run PowerShell script with elevated privileges on Windows.
+    Uses Start-Process with -Verb RunAs to trigger UAC prompt, but runs silently.
+    """
+    # Escape single quotes in the script
+    escaped_script = script.replace("'", "''")
+    
+    # Wrap the script in a Start-Process call that requests elevation but hides the window
+    elevated_cmd = (
+        f"Start-Process powershell -Verb RunAs "
+        f"-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-Command','{escaped_script}' "
+        f"-WindowStyle Hidden -Wait"
+    )
+    
+    return subprocess.run(
+        ["powershell", "-WindowStyle", "Hidden", "-Command", elevated_cmd],
+        capture_output=True,
+        text=True,
+        check=True,
+        creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+    )
+
+
 def open_port(port: int, proto: str = "tcp"):
     os_name = platform.system().lower()
 
     if os_name == "linux":
         cmd = ["sudo", "ufw", "allow", f"{port}/{proto}"]
+        try:
+            subprocess.run(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+            )
+            notify.firewall(f"{port}:{proto.upper()} opened to allow traffic to service.")
+        except subprocess.CalledProcessError as e:
+            notify.error(f"Failed to open port {port}:{proto.upper()}. Error: {e}")
     elif os_name == "windows":
-        cmd = [
-            "powershell",
-            f"New-NetFirewallRule -DisplayName 'AllowPort{port}' "
-            f"-Direction Inbound -Protocol {proto.upper()} -LocalPort {port} -Action Allow",
-        ]
+        script = f"New-NetFirewallRule -DisplayName 'AllowPort{port}' -Direction Inbound -Protocol {proto.upper()} -LocalPort {port} -Action Allow -ErrorAction Stop"
+        try:
+            _run_elevated_powershell(script)
+            notify.firewall(f"{port}:{proto.upper()} opened to allow traffic to service.")
+        except subprocess.CalledProcessError as e:
+            notify.error(f"Failed to open port {port}:{proto.upper()}. You may need to approve the UAC prompt.")
+        except Exception as e:
+            notify.error(f"Failed to open port {port}:{proto.upper()}. Error: {e}")
     elif os_name == "darwin":
         notify.error("This application is not supported on macOS.")
         exit(1)
     else:
         notify.error(f"Firewall handling not implemented for {os_name}")
         exit(1)
-
-    try:
-        subprocess.run(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
-        )
-        notify.firewall(f"{port}:{proto.upper()} opened to allow traffic to service.")
-    except subprocess.CalledProcessError as e:
-        notify.error(f"Failed to open port {port}:{proto.upper()}. Error: {e}")
 
 
 def close_port(port: int, proto: str = "tcp"):
@@ -45,25 +72,28 @@ def close_port(port: int, proto: str = "tcp"):
 
     if os_name == "linux":
         cmd = ["sudo", "ufw", "delete", "allow", f"{port}/{proto}"]
+        try:
+            subprocess.run(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+            )
+            notify.firewall(f"{port}:{proto.upper()} closed.")
+        except subprocess.CalledProcessError as e:
+            notify.error(f"Failed to close port {port}:{proto.upper()}. Error: {e}")
     elif os_name == "windows":
-        cmd = [
-            "powershell",
-            f"Get-NetFirewallRule | Where-Object {{$_.DisplayName -eq 'AllowPort{port}'}} | Remove-NetFirewallRule",
-        ]
+        script = f"Get-NetFirewallRule | Where-Object {{$_.DisplayName -eq 'AllowPort{port}'}} | Remove-NetFirewallRule -ErrorAction Stop"
+        try:
+            _run_elevated_powershell(script)
+            notify.firewall(f"{port}:{proto.upper()} closed.")
+        except subprocess.CalledProcessError as e:
+            notify.error(f"Failed to close port {port}:{proto.upper()}. You may need to approve the UAC prompt.")
+        except Exception as e:
+            notify.error(f"Failed to close port {port}:{proto.upper()}. Error: {e}")
     elif os_name == "darwin":
         notify.error("This application is not supported on macOS.")
         exit(1)
     else:
         notify.error(f"Firewall handling not implemented for {os_name}")
         exit(1)
-
-    try:
-        subprocess.run(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
-        )
-        notify.firewall(f"{port}:{proto.upper()} closed.")
-    except subprocess.CalledProcessError as e:
-        notify.error(f"Failed to close port {port}:{proto.upper()}. Error: {e}")
 
 
 def configure_firewall_from_config(config_path: str, ssh_port: Optional[int] = None):
@@ -294,16 +324,21 @@ def _apply_windows_firewall(allowed: Set[Tuple[int, str]], ssh_port: int) -> Non
       - Add allows for specified ports (including SSH port)
     """
     rule_cmds = []
-    rule_cmds.append("Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block -DefaultOutboundAction Allow")
-    rule_cmds.append("Get-NetFirewallRule | Where-Object {$_.DisplayName -like 'AllowPort*'} | Remove-NetFirewallRule")
+    rule_cmds.append("Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block -DefaultOutboundAction Allow -ErrorAction Stop")
+    rule_cmds.append("Get-NetFirewallRule | Where-Object {$_.DisplayName -like 'AllowPort*'} | Remove-NetFirewallRule -ErrorAction SilentlyContinue")
 
     for port, proto in sorted(allowed):
         rule_cmds.append(
-            f"New-NetFirewallRule -DisplayName 'AllowPort{port}' -Direction Inbound -Protocol {proto.upper()} -LocalPort {port} -Action Allow"
+            f"New-NetFirewallRule -DisplayName 'AllowPort{port}' -Direction Inbound -Protocol {proto.upper()} -LocalPort {port} -Action Allow -ErrorAction Stop"
         )
 
     ps_script = "; ".join(["$ErrorActionPreference = 'Stop'"] + rule_cmds)
-    subprocess.run(["powershell", ps_script], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    try:
+        _run_elevated_powershell(ps_script)
+    except subprocess.CalledProcessError as e:
+        notify.error("Failed to configure Windows firewall. You may need to approve the UAC prompt.")
+        raise
 
 
 def _start_ssh_windows() -> None:
@@ -315,7 +350,12 @@ def _start_ssh_windows() -> None:
         "Set-Service -Name sshd -StartupType Automatic",
         "Start-Service -Name sshd"
     ])
-    subprocess.run(["powershell", ps_script], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    try:
+        _run_elevated_powershell(ps_script)
+    except subprocess.CalledProcessError as e:
+        notify.error("Failed to start SSH service. You may need to approve the UAC prompt.")
+        raise
 
 
 def _linux_status(ssh_port: int) -> Dict[str, Any]:
