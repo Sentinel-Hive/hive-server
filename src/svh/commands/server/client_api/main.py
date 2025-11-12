@@ -24,7 +24,13 @@ from .alerts_schema import AlertIn, AlertOut  # if present
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup
+    notify.server("Starting SVH Client API server...")
     yield
+    # Shutdown
+    notify.server("Shutting down SVH Client API server...")
+    await websocket_hub.shutdown()
+    notify.server("SVH Client API server shutdown complete.")
 
 
 app = FastAPI(title="SVH Client API", lifespan=lifespan)
