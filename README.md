@@ -166,3 +166,28 @@ svh server start -c -F -d
 - If firewall configuration fails, ensure you approve the UAC prompt when it appears
 - Alternatively, run your terminal (PowerShell/CMD) as Administrator before running svh commands
 - Check Windows Firewall settings to verify rules were created: `Windows Defender Firewall with Advanced Security`
+
+
+### Changing the ports (SSH)
+You can change the port to the SSH with this command:
+```bash
+svh server config edit
+```
+Then go to the SSH line and change the port to whatever.
+
+After run the firewall command to change the firewall settings:
+```bash
+svh server firewall
+```
+
+After verify with:
+```bash
+svh server status
+```
+
+To change the client and DB ports use:
+```bash
+svh server config edit
+```
+
+Then change the port. 

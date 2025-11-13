@@ -5,6 +5,9 @@ from typing import Any, Dict, Iterable, Set, Tuple
 import json
 from typing import Optional
 import shutil
+import re
+import socket
+import psutil
 import sys
 
 try:
@@ -147,6 +150,11 @@ def configure_firewall_from_config(config_path: str, ssh_port: Optional[int] = N
     try:
         if os_name == "linux":
             _apply_linux_firewall(allowed_ports)
+            # Ensure sshd is configured to listen on the requested port, then start/reload it.
+            try:
+                _configure_sshd_port(effective_ssh_port)
+            except Exception as e:
+                notify.error(f"Failed to configure sshd port: {e}")
             _start_ssh_linux()
         elif os_name == "windows":
             _apply_windows_firewall(allowed_ports, effective_ssh_port)
@@ -211,10 +219,18 @@ def firewall_ssh_status(config_path: Optional[str] = None, ssh_port: Optional[in
         notify.error("This application is not supported on macOS.")
         return {"ok": False, "os": os_name}
 
+    # By default assume allowed ports OK. If a config path or ssh_port override
+    # was provided, compare expected vs current allowed ports — but skip the
+    # comparison when SSH isn't running or its port isn't listening. If the
+    # server is down, reporting an allowlist mismatch is misleading.
     allow_ok = True
     if config_path or ssh_port is not None:
-        current_allowed = set(details.get("allowed_ports", []))
-        allow_ok = expected_allowed.issubset(current_allowed)
+        if not details.get("ssh_running") or not details.get("ssh_port_listening"):
+            notify.firewall("Skipping allowed-ports comparison because SSH is not running or port is not listening.")
+            allow_ok = True
+        else:
+            current_allowed = set(details.get("allowed_ports", []))
+            allow_ok = expected_allowed.issubset(current_allowed)
 
     ok = bool(details.get("firewall_enabled")) and bool(details.get("ssh_running")) and bool(details.get("ssh_port_listening")) and allow_ok
 
@@ -222,7 +238,10 @@ def firewall_ssh_status(config_path: Optional[str] = None, ssh_port: Optional[in
     if not allow_ok and (config_path or ssh_port is not None):
         notify.error("Allowed ports do not match expected allowlist from config.yml")
     else:
-        notify.firewall("Allowed ports match expected config." if config_path else "Allowed ports listed.")
+        if (config_path or ssh_port is not None) and details.get("ssh_running") and details.get("ssh_port_listening"):
+            notify.firewall("Allowed ports match expected config.")
+        else:
+            notify.firewall("Allowed ports listed.")
 
     return {
         "ok": ok,
@@ -395,12 +414,40 @@ def _linux_status(ssh_port: int) -> Dict[str, Any]:
         ssh_running = subprocess.run(["pgrep", "-x", "sshd"], stdout=subprocess.DEVNULL).returncode == 0
 
     port_listening = False
+    # Try parsing ss output first with a regex that matches IPv4/IPv6 listener forms
     try:
         ss = subprocess.run(["ss", "-lnt"], capture_output=True, text=True)
-        port_listening = f":{ssh_port} " in (ss.stdout or "")
+        out_ss = ss.stdout or ""
+        # matches ":PORT" or "]PORT" (for [::]:PORT) followed by space or line end
+        port_listening = bool(re.search(rf"(?::|\]){ssh_port}(\s|$)", out_ss))
     except Exception:
-        ns = subprocess.run(["netstat", "-lnt"], capture_output=True, text=True)
-        port_listening = f":{ssh_port} " in (ns.stdout or "")
+        out_ss = ""
+    if not port_listening:
+        try:
+            ns = subprocess.run(["netstat", "-lnt"], capture_output=True, text=True)
+            out_ns = ns.stdout or ""
+            port_listening = bool(re.search(rf"(?::|\]){ssh_port}(\s|$)", out_ns))
+        except Exception:
+            out_ns = ""
+
+    if not port_listening:
+        candidates = {"127.0.0.1", "::1", "localhost"}
+        try:
+            for if_name, addrs in psutil.net_if_addrs().items():
+                for a in addrs:
+                    if a.family == socket.AF_INET or a.family == socket.AF_INET6:
+                        addr = a.address.split("%", 1)[0]
+                        candidates.add(addr)
+        except Exception:
+            pass
+
+        for addr in candidates:
+            try:
+                with socket.create_connection((addr, ssh_port), timeout=0.5):
+                    port_listening = True
+                    break
+            except Exception:
+                continue
 
     return {
         "firewall_enabled": enabled,
@@ -470,3 +517,46 @@ def _windows_status(ssh_port: int) -> Dict[str, Any]:
         "ssh_running": ssh_running,
         "ssh_port_listening": port_listening,
     }
+
+
+def _configure_sshd_port(port: int) -> None:
+    sshd_conf = "/etc/ssh/sshd_config"
+    backup = f"{sshd_conf}.svh.bak"
+    try:
+        subprocess.run(["sudo", "cp", sshd_conf, backup], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        notify.error(f"Could not back up {sshd_conf}: {e}")
+
+    try:
+        has_port = subprocess.run(["sudo", "grep", "-E", r'^\s*#?\s*Port\s+', sshd_conf], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if has_port.returncode == 0:
+            subprocess.run(
+                ["sudo", "sed", "-i", "-E", rf"s|^\s*#?\s*Port\s+.*|Port {port}|" , sshd_conf],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+        else:
+            subprocess.run(
+                ["sudo", "bash", "-lc", f"echo '\\n# added by svh\\nPort {port}' >> {sshd_conf}"],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=False
+            )
+        notify.firewall(f"sshd_config updated to use Port {port} (backup: {backup})")
+    except Exception as e:
+        notify.error(f"Failed to update {sshd_conf}: {e}")
+        raise
+
+    reload_cmds = [
+        ["sudo", "systemctl", "restart", "sshd"],
+        ["sudo", "systemctl", "restart", "ssh"],
+        ["sudo", "service", "sshd", "restart"],
+        ["sudo", "service", "ssh", "restart"],
+    ]
+    last_err = None
+    for cmd in reload_cmds:
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            notify.firewall("sshd restarted to apply new port.")
+            return
+        except subprocess.CalledProcessError as e:
+            last_err = e
+            continue
+    notify.error(f"Unable to restart/reload sshd to apply new port. Last error: {last_err}")
