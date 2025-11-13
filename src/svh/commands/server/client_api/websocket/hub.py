@@ -1,8 +1,11 @@
 from __future__ import annotations
+from datetime import datetime
 from typing import Callable, List
 from dataclasses import dataclass
+import asyncio
 
 from fastapi import WebSocket
+from pytz import timezone
 from svh import notify
 
 
@@ -21,6 +24,7 @@ class WebsocketHub:
 
     def __init__(self) -> None:
         self._conns: List[Connection] = []
+        self._shutdown = False
 
     async def connect(self, websocket: WebSocket, user_id: str, is_admin: bool) -> None:
         """
@@ -39,6 +43,55 @@ class WebsocketHub:
         after = len(self._conns)
         if before != after:
             notify.websocket(f"disconnected (clients={after})")
+
+    async def shutdown(self) -> None:
+        """
+        Gracefullly shudwon all active connections.
+        Notifies all clients that the server is shutting down before closing.
+        """
+        if self._shutdown:
+            return
+        
+        self._shutdown = True
+        notify.websocket(f"Initiating graceful shutdown of ({len(self._conns)} active connections.)")
+
+        # Send shudown for all clients
+        shutdown_message = {
+            "type": "server_shutdown",
+            "message": "Server is shutting down. You will now be logged out.",
+            "timestamp": datetime.now(timezone("UTC")).isoformat(),
+        }
+
+        # Broadcast shutdown message to all clients
+        dead: List[Connection] = []
+        for conn in list(self._conns):
+            try:
+                await conn.ws.send_json(shutdown_message)
+                notify.websocket(f"Sent shudown notice to {conn.user_id}")
+            except Exception as e:
+                notify.websocket(f"Failed to notify {conn.user_id} of shutdown: {e!r}")
+                dead.append(conn)
+
+        # Wait for clients to receive the message
+        await asyncio.sleep(1)
+
+        # Close all connections
+        for conn in list(self._conns):
+            try:
+                await conn.ws.close(code=1001, reason="Server shutting down")
+                notify.websocket(f"Clossed connection for {conn.user_id}")
+            except Exception as e:
+                notify.websocket(f"Error closing connection for {conn.user_id}: {e!r}")
+
+        # Clear all connections
+        self._conns.clear()
+        notify.websocket("Graceful shutdown complete. All connections closed.")
+
+    def get_active_count(self) -> int:
+        """
+        Get the number of active connections.
+        """
+        return len(self._conns)
 
     async def send_to(self, websocket: WebSocket, message: dict) -> None:
         """
