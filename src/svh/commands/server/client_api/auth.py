@@ -111,3 +111,62 @@ def check(token: str):
 @router.get("/whoami")
 def whoami(user: User = Depends(current_user)):
     return {"user_id": user.user_id, "is_admin": user.is_admin}
+
+
+class RefreshOut(BaseModel):
+    token: str
+    expires_in: int
+
+
+@router.post("/refresh", response_model=RefreshOut)
+def refresh_token(user: User = Depends(current_user), request: Request = None):
+    """
+    Refresh an existing authentication token.
+    Validates the current token and issues a new one with fresh TTL.
+    """
+    # Get the current token from request
+    token = None
+    if request:
+        auth = request.headers.get("authorization") or ""
+        if auth.lower().startswith("bearer "):
+            token = auth.split(" ", 1)[1].strip()
+        if not token:
+            token = request.cookies.get("svh_token")
+
+    if not token:
+        raise HTTPException(401, "Token missing for refresh")
+
+    # Verify the current token is still valid in cache
+    cached_user_id = cache.get(token)
+    if not cached_user_id or cached_user_id != user.user_id:
+        raise HTTPException(401, "Invalid or expired token")
+
+    # Generate new token with fresh TTL (default 1 hour)
+    new_ttl = 3600  # 1 hour
+
+    # Request new token from DB API
+    try:
+        res = _db_post(
+            "/auth/login",
+            {"user_id": user.user_id, "password": "", "ttl": new_ttl, "refresh": True},
+        )
+        new_token = res.get("token")
+
+        if not new_token:
+            # Fallback: generate token locally if DB doesn't support refresh
+            from ...db.token import make_token
+            new_token = make_token(user.user_id, new_ttl)
+
+    except Exception as e:
+        # Fallback to local token generation
+        notify.server(f"Token refresh DB API error (using fallback): {e}")
+        from ...db.token import make_token
+        new_token = make_token(user.user_id, new_ttl)
+
+    # Invalidate old token and cache new one
+    cache.delete(token)
+    cache.set(new_token, user.user_id, new_ttl)
+
+    notify.server(f"{user.user_id} refreshed token (TTL: {new_ttl}s)")
+
+    return RefreshOut(token=new_token, expires_in=new_ttl)
