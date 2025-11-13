@@ -204,3 +204,62 @@ async def get_data_file(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to read stored file: {e}",
         )
+
+
+@router.delete("/data/{id}")
+async def delete_data(id: int):
+    """
+    Delete a dataset by id. Removes the DB record and attempts to delete the file.
+
+    Returns JSON with deletion status. If the file does not exist, the DB row is
+    still deleted and "deleted_file" will be false.
+    """
+    try:
+        # 1) Look up the dataset to get its path
+        with session_scope() as session:
+            row = session.execute(
+                text(
+                    """
+                    SELECT dataset_path
+                    FROM datasets
+                    WHERE id = :id
+                    """
+                ),
+                {"id": id},
+            ).fetchone()
+
+            if not row:
+                raise HTTPException(status_code=404, detail="Dataset not found")
+
+            dataset_path = row[0]
+
+            # 2) Delete the DB record
+            del_res = session.execute(
+                text("DELETE FROM datasets WHERE id = :id"), {"id": id}
+            )
+            # Optional check rows affected, but SQLite via text() may not expose rowcount reliably
+
+        # 3) Attempt to delete the file on disk (outside transaction)
+        deleted_file = False
+        try:
+            file_path = Path(storage.PROJECT_ROOT) / dataset_path
+            if file_path.exists():
+                file_path.unlink()
+                deleted_file = True
+            else:
+                deleted_file = False
+        except Exception as fe:
+            # Log but do not fail the whole operation if file removal fails
+            notify.error(f"Failed to delete dataset file '{dataset_path}': {fe}")
+            deleted_file = False
+
+        notify.database(f"Deleted dataset id={id}; file deleted={deleted_file}")
+        return {"ok": True, "deleted_id": id, "deleted_file": deleted_file}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete dataset: {e}",
+        )

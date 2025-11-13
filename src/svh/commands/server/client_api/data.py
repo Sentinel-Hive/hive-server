@@ -138,6 +138,37 @@ async def store_data(data: Dict[str, Any], user: User = Depends(verify_admin_tok
         )
 
 
+@router.delete("/data/{id}")
+async def delete_data(id: int, user: User = Depends(verify_admin_token)):
+    """
+    Admin-only: delete a dataset by id.
+    Forwards the request to the DB API and returns its result.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.delete(f"{DB_API_URL}/data/{id}", timeout=10.0)
+            if res.status_code == 404:
+                raise HTTPException(status_code=404, detail="Dataset not found")
+            if res.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"DB API failed to delete dataset (status {res.status_code})",
+                )
+            return res.json()
+    except HTTPException:
+        raise
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to communicate with DB API: {e}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete dataset: {e}",
+        )
+
+
 async def verify_user_token(authorization: Optional[str] = Header(None)):
     if not authorization:
         raise HTTPException(
