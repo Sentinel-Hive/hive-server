@@ -57,6 +57,12 @@ pip install --editable .
 pip install httpx
 ```
 
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Start-Service sshd
+Set-Service -Name sshd -StartupType 'Automatic'
+```
+
 ---
 
 ## Commands
@@ -136,19 +142,27 @@ curl -X POST http://localhost:5167/data \
 ```
 
 ### Firewall
+
+**Note for Windows users**: Firewall operations require administrator privileges. You'll be prompted by UAC (User Account Control) to approve elevated access when configuring firewall rules.
+
 You can check firewall status with this command:
 ```bash
 svh server status
 ```
-You can start the firewall with this commnad: 
+
+You can configure the firewall with this command: 
 ```bash
 svh server -F
-
-or
-
+# or
 svh server firewall
 ```
-You can start the server and the firewall at the same time with this commnad:
+
+You can start the server and configure the firewall at the same time with this command:
 ```bash
 svh server start -c -F -d
 ```
+
+**Troubleshooting Windows Firewall Issues:**
+- If firewall configuration fails, ensure you approve the UAC prompt when it appears
+- Alternatively, run your terminal (PowerShell/CMD) as Administrator before running svh commands
+- Check Windows Firewall settings to verify rules were created: `Windows Defender Firewall with Advanced Security`
