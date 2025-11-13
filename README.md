@@ -52,8 +52,7 @@ python -m venv .venv
 pip install --editable .
 ```
 
-**5. Install dependencies**
-In powershell run this command:
+**5. Install dependencies using powershell**
 ```powershell
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Start-Service sshd
