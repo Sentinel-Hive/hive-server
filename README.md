@@ -53,10 +53,7 @@ pip install --editable .
 ```
 
 **5. Install dependencies**
-```bash
-pip install httpx
-```
-
+In powershell run this command:
 ```powershell
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Start-Service sshd
