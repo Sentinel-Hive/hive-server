@@ -297,13 +297,33 @@ def sql(query: str, write: bool = typer.Option(False, "--write", "-w", "--w", "-
         raise typer.Exit(1)
     create_all()
     eng = get_engine()
-    with eng.connect() as conn:
-        res = conn.execute(text(query))
-        try:
-            rows = res.mappings().all()
-        except Exception:
-            typer.echo("(ok)")
-            return
+    # For write operations we must COMMIT; use a transaction context.
+    if write:
+        with eng.begin() as conn:
+            res = conn.execute(text(query))
+            # No explicit commit needed; eng.begin() auto-commits on success.
+            try:
+                rows = res.mappings().all()
+                # If a write unexpectedly returns rows, print them.
+            except Exception:
+                # Best-effort report of affected rows if available
+                try:
+                    rc = getattr(res, "rowcount", None)
+                    if rc is not None and rc >= 0:
+                        typer.echo(f"(ok) rows={rc}")
+                    else:
+                        typer.echo("(ok)")
+                except Exception:
+                    typer.echo("(ok)")
+                return
+    else:
+        with eng.connect() as conn:
+            res = conn.execute(text(query))
+            try:
+                rows = res.mappings().all()
+            except Exception:
+                typer.echo("(ok)")
+                return
     if not rows:
         typer.echo("(no rows)")
         return

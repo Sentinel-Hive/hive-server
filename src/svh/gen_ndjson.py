@@ -5,10 +5,10 @@ Usage examples:
     python gen_ndjson.py
 
     # generate 200 records for only the Firewall and Web App combined
-    python gen_ndjson.py 200 --apps Firewall,Web App > sample.ndjson
+    python gen_ndjson.py 200 --apps Firewall,HTTP-App > sample.ndjson
 
     # generate 50 records per-app and write separate files (Firewall -> firewall.ndjson)
-    python gen_ndjson.py 50 --apps Firewall,Web App --mode separate --out-dir ./datasets
+    python gen_ndjson.py 50 --apps Firewall,HTTP-App --mode separate --out-dir ./datasets
 
 Options:
     --apps APP1,APP2  Limit generation to records for matching app names (case-insensitive substring).
@@ -17,6 +17,21 @@ Options:
     --out FILE        When used with --mode combined, write output to FILE instead of stdout.
     --out-dir DIR     When used with --mode separate, place per-app files into DIR (defaults to cwd).
     --seed N          Same as before: set RNG seed for reproducible output.
+
+App Choices:
+    SSH-Daemon
+    HTTP-App
+    SFTP-Service
+    DB-Proxy
+    FTP-Service
+    DNS-Server
+    Mail-Server
+    NTP-Server
+    Firewall
+    IDS
+    Server-Events
+    System-Logs
+    Alerts
 """
 
 import argparse
@@ -29,6 +44,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 import os
 import secrets, string
+import ipaddress
 
 
 _sysrand = secrets.SystemRandom()
@@ -106,6 +122,9 @@ random.seed(SEED)
 
 # Pre-generate a pool of users for reuse (about 20% of record count but at least 5)
 USER_POOL = [gen_userid() + "@sentinelhive.com" for _ in range(max(5, COUNT // 5))]
+# Profiles and affinities
+USER_PROFILES: dict[str, dict] = {}
+USER_DEST_AFFINITY: dict[str, dict[str, list[str]]] = {}
 REUSE_USER_CHANCE = 0.7  # 70% chance to reuse an existing user
 
 APPS = [
@@ -193,9 +212,175 @@ ATTACK_REASONS = [
     "known C2 beaconing", "suspicious registry change", "unauthorized schema change"
 ]
 HOST_PREFIXES = ["app","host","web","db","vpn","fw","scanner","lb","ids","mail"]
+
+# ---- IP geography and pools -----------------------------------------------
+
+# Region weights: skew to US
+REGION_WEIGHTS = [
+    ("US", 0.85),
+    ("EU", 0.07),
+    ("APAC", 0.05),
+    ("LATAM", 0.02),
+    ("OTHER", 0.01),
+]
+
+# Example public-ish subnets per region (for simulation only)
+REGION_SUBNETS = {
+    "US": [
+        "34.102.0.0/24",  # GCP US
+        "52.14.0.0/24",   # AWS US
+        "63.142.0.0/24",
+        "96.44.0.0/24",
+        "104.16.0.0/24",  # Cloudflare
+        "146.75.0.0/24",
+    ],
+    "EU": [
+        "51.15.0.0/24",
+        "34.140.0.0/24",
+        "54.93.0.0/24",
+        "185.60.216.0/24",
+    ],
+    "APAC": [
+        "13.209.0.0/24",
+        "52.95.0.0/24",
+        "35.189.0.0/24",
+        "43.255.0.0/24",
+    ],
+    "LATAM": [
+        "181.30.0.0/24",
+        "187.16.0.0/24",
+        "191.232.0.0/24",
+    ],
+    "OTHER": [
+        "203.0.113.0/24",  # TEST-NET-3
+        "198.51.100.0/24", # TEST-NET-2
+    ],
+}
+
+# Destination pools (keep small to create clear graph edges)
+DEST_POOL_SUBNETS = {
+    "web":     ["203.0.113.0/24", "198.51.100.0/24", "192.0.2.0/24"],
+    "db":      ["10.20.30.0/24", "10.20.31.0/24"],
+    "dns":     ["10.53.0.0/24"],
+    "mail":    ["10.25.0.0/24"],
+    "ntp":     ["10.123.0.0/24"],
+    "ssh":     ["10.22.0.0/24"],
+    "ftp":     ["10.21.0.0/24"],
+    "sftp":    ["10.202.2.0/24"],
+    "ids":     ["10.99.0.0/24"],
+    "system":  ["10.50.0.0/24"],
+    "default": ["10.200.0.0/24"],
+}
+DEST_POOLS: dict[str, list[str]] = {}
+
+# Service identities for responses (so responses don't look like random end-users)
+SERVICE_USER_BY_KEY = {
+    "web": "web-service",
+    "dns": "dns-service",
+    "db": "db-service",
+    "mail": "mail-server",
+    "ntp": "ntp-service",
+    "ssh": "ssh-daemon-server",
+    "ftp": "ftp-service",
+    "sftp": "sftp-service",
+    "ids": "ids-service",
+    "system": "system-service",
+    "default": "unknown-service",
+}
+
+
+def _choose_region() -> str:
+    names = [n for n, _ in REGION_WEIGHTS]
+    weights = [w for _, w in REGION_WEIGHTS]
+    return random.choices(names, weights=weights, k=1)[0]
+
+
+def _ip_from_subnet(subnet: str) -> str:
+    net = ipaddress.ip_network(subnet, strict=False)
+    # Choose a host within the subnet (avoid .0 and .255 for /24)
+    if net.num_addresses <= 4:
+        return str(list(net.hosts())[0])
+    first = int(next(net.hosts()).packed[-1])  # usually .1
+    # pick an offset in [1, 250]
+    host_offset = random.randint(1, min(250, net.num_addresses - 2))
+    base = int(net.network_address)
+    ip_int = base + host_offset
+    return str(ipaddress.ip_address(ip_int))
+
+
+def _init_dest_pools():
+    global DEST_POOLS
+    for key, subs in DEST_POOL_SUBNETS.items():
+        ips: list[str] = []
+        for s in subs:
+            # generate a handful per subnet to keep pool small
+            for _ in range(8):
+                ips.append(_ip_from_subnet(s))
+        # Deduplicate while preserving order
+        seen = set()
+        DEST_POOLS[key] = [x for x in ips if not (x in seen or seen.add(x))]
+
+
+def _assign_user_profile(user: str):
+    if user in USER_PROFILES:
+        return
+    region = _choose_region()
+    sub = random.choice(REGION_SUBNETS[region])
+    ip = _ip_from_subnet(sub)
+    USER_PROFILES[user] = {"region": region, "home_subnet": sub, "home_ip": ip}
+
+
+def get_src_ip_for_user(user: str) -> str:
+    if user not in USER_PROFILES:
+        _assign_user_profile(user)
+    return USER_PROFILES[user]["home_ip"]
+
+
+def _dest_key_for_app(app: str) -> str:
+    a = app.lower()
+    if "http" in a or "web" in a:
+        return "web"
+    if "db" in a:
+        return "db"
+    if "dns" in a:
+        return "dns"
+    if "mail" in a or "smtp" in a:
+        return "mail"
+    if "ntp" in a:
+        return "ntp"
+    if a.startswith("ssh"):
+        return "ssh"
+    if "sftp" in a:
+        return "sftp"
+    if "ftp" in a and "sftp" not in a:
+        return "ftp"
+    if "ids" in a:
+        return "ids"
+    if "system" in a or "server" in a:
+        return "system"
+    return "default"
+
+
+def pick_dest_ip(user: str, app: str) -> str:
+    key = _dest_key_for_app(app)
+    pool = DEST_POOLS.get(key) or DEST_POOLS["default"]
+    # Affinity: for each pool key, remember 3 preferred dests per user
+    if user not in USER_DEST_AFFINITY:
+        USER_DEST_AFFINITY[user] = {}
+    if key not in USER_DEST_AFFINITY[user]:
+        USER_DEST_AFFINITY[user][key] = random.sample(pool, k=min(3, len(pool)))
+    favs = USER_DEST_AFFINITY[user][key]
+    # 80% chance pick from favourites, else from whole pool
+    if random.random() < 0.8 and favs:
+        return random.choice(favs)
+    return random.choice(pool)
+
+def service_user_for_app(app: str) -> str:
+    return SERVICE_USER_BY_KEY.get(_dest_key_for_app(app), SERVICE_USER_BY_KEY["default"])
 PORTS = [22, 80, 443, 21, 3389, 3306, 5432, 53, 123, 8080, 8443, 2022, 5060]
 
 def rand_ip(publicish=True):
+    # Legacy fallback; prefer get_src_ip_for_user/pick_dest_ip
     if random.random() < 0.6:
         return f"10.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}"
     else:
@@ -221,9 +406,11 @@ def make_record_for_app(i, app_override=None):
         # Maybe add new user to pool (50% chance if pool isn't too big)
         if len(USER_POOL) < max(10, COUNT // 3) and random.random() < 0.5:
             USER_POOL.append(user)
+    # Ensure user profile exists (region + stable IP)
+    _assign_user_profile(user)
             
-    src_ip = rand_ip()
-    dest = rand_ip()
+    src_ip = get_src_ip_for_user(user)
+    dest = pick_dest_ip(user, app)
 
     # Prefer event types appropriate for the app when possible
     def choose_event_for_app(a):
@@ -482,16 +669,10 @@ def make_record_for_app(i, app_override=None):
         dest_port = random.choice([21, 2022])
         src_port = random.randint(1024, 65535)
     elif "dns" in app.lower():
-        if random.random() < 0.6:
-            # incoming query
-            dest_port = 53
-            src_port = random.randint(1024, 65535)
-            extras["dnsDirection"] = "query"
-        else:
-            # outgoing response
-            src_port = 53
-            dest_port = random.randint(1024, 65535)
-            extras["dnsDirection"] = "response"
+        # Model the request from user -> DNS server as the primary event
+        dest_port = 53
+        src_port = random.randint(1024, 65535)
+        extras["dnsDirection"] = "query"
     elif "mail" in app.lower():
         dest_port = random.choice([25, 465, 110, 143, 995, 993])
         src_port = random.randint(1024, 65535)
@@ -743,6 +924,114 @@ def make_record_for_app(i, app_override=None):
         if field in extras:
             result[field] = extras[field]
 
+    # Carry over DNS direction if set
+    if "dnsDirection" in extras:
+        result["dns_direction"] = extras["dnsDirection"]
+
+    # Optionally emit a response event to form a flow (HTTP/DNS)
+    def _emit_pair_http(res: dict) -> list[dict]:
+        flow_id = str(uuid.uuid4())
+        res = dict(res)
+        res["flow_id"] = flow_id
+        res["flow_seq"] = 1
+        res["direction"] = "request"
+        # response mirrors ports and swap IPs
+        resp = dict(res)
+        resp["id"] = f"{res['id']}-r"
+        resp["flow_seq"] = 2
+        resp["direction"] = "response"
+        resp["src_ip"], resp["dest_ip"] = res["dest_ip"], res["src_ip"]
+        resp["src_port"], resp["dest_port"] = res["dest_port"], res["src_port"]
+        # mark response event type/message
+        code = res.get("http_status_code")
+        if code is None:
+            code = extras.get("statusCode", 200) if isinstance(extras, dict) else 200
+        resp["evt_type"] = "http.response"
+        resp["message"] = f"Response {code}"
+        # service identity for response
+        resp["user"] = service_user_for_app(app)
+        # realistic timing: small positive latency
+        try:
+            base = datetime.fromisoformat(res["timestamp"])  # already UTC-aware
+            ms = random.randint(3, 1500)
+            resp["timestamp"] = (base + timedelta(milliseconds=ms)).isoformat()
+            resp["latency_ms"] = ms
+        except Exception:
+            pass
+        return [res, resp]
+
+    def _emit_pair_dns(res: dict) -> list[dict]:
+        flow_id = str(uuid.uuid4())
+        res = dict(res)
+        res["flow_id"] = flow_id
+        res["flow_seq"] = 1
+        res["direction"] = "request"
+        res["dns_direction"] = "query"
+        # response from DNS server back to user
+        resp = dict(res)
+        resp["id"] = f"{res['id']}-r"
+        resp["flow_seq"] = 2
+        resp["direction"] = "response"
+        resp["dns_direction"] = "response"
+        resp["src_ip"], resp["dest_ip"] = res["dest_ip"], res["src_ip"]
+        resp["src_port"], resp["dest_port"] = 53, res["src_port"]
+        # keep evt type as dns_query
+        resp["user"] = service_user_for_app(app)
+        # realistic timing
+        try:
+            base = datetime.fromisoformat(res["timestamp"])  # UTC-aware
+            ms = random.randint(2, 800)
+            resp["timestamp"] = (base + timedelta(milliseconds=ms)).isoformat()
+            resp["latency_ms"] = ms
+        except Exception:
+            pass
+        return [res, resp]
+
+    def _emit_pair_generic(res: dict, proto_label: str) -> list[dict]:
+        flow_id = str(uuid.uuid4())
+        res = dict(res)
+        res["flow_id"] = flow_id
+        res["flow_seq"] = 1
+        res["direction"] = "request"
+        resp = dict(res)
+        resp["id"] = f"{res['id']}-r"
+        resp["flow_seq"] = 2
+        resp["direction"] = "response"
+        resp["src_ip"], resp["dest_ip"] = res["dest_ip"], res["src_ip"]
+        resp["src_port"], resp["dest_port"] = res["dest_port"], res["src_port"]
+        resp["evt_type"] = f"{proto_label}.response"
+        resp["message"] = f"{proto_label.upper()} response"
+        resp["user"] = service_user_for_app(app)
+        # realistic timing
+        try:
+            base = datetime.fromisoformat(res["timestamp"])  # UTC-aware
+            # generic services tend to be quick but can vary
+            ms = random.randint(5, 1200)
+            resp["timestamp"] = (base + timedelta(milliseconds=ms)).isoformat()
+            resp["latency_ms"] = ms
+        except Exception:
+            pass
+        return [res, resp]
+
+    low_app = app.lower()
+    try_emit_pair = random.random() < 0.65
+    if try_emit_pair and ("http" in low_app or "web" in low_app):
+        return _emit_pair_http(result)
+    if try_emit_pair and ("dns" in low_app):
+        return _emit_pair_dns(result)
+    if try_emit_pair and ("db" in low_app):
+        return _emit_pair_generic(result, "db")
+    if try_emit_pair and ("mail" in low_app or "smtp" in low_app):
+        return _emit_pair_generic(result, "mail")
+    if try_emit_pair and ("ntp" in low_app):
+        return _emit_pair_generic(result, "ntp")
+    if try_emit_pair and (low_app.startswith("ssh")):
+        return _emit_pair_generic(result, "ssh")
+    if try_emit_pair and ("sftp" in low_app):
+        return _emit_pair_generic(result, "sftp")
+    if try_emit_pair and ("ftp" in low_app and "sftp" not in low_app):
+        return _emit_pair_generic(result, "ftp")
+
     return result
 
 def main():
@@ -777,7 +1066,11 @@ def main():
         for i in range(1, COUNT+1):
             app_choice = random.choice(selected_apps)
             rec = make_record_for_app(i, app_choice)
-            target_print(json.dumps(rec, ensure_ascii=False))
+            if isinstance(rec, list):
+                for r in rec:
+                    target_print(json.dumps(r, ensure_ascii=False))
+            else:
+                target_print(json.dumps(rec, ensure_ascii=False))
         if outfh:
             outfh.close()
             path_msg = args.out if args.out else output_path
@@ -791,8 +1084,16 @@ def main():
             with open(path, "w", encoding="utf-8") as fh:
                 for i in range(1, COUNT+1):
                     rec = make_record_for_app(i, app)
-                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    if isinstance(rec, list):
+                        for r in rec:
+                            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+                    else:
+                        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
             print(f"Wrote {COUNT} records for '{app}' -> {path}", file=sys.stderr)
 
 if __name__ == "__main__":
+    # Initialize IP pools and user profiles for the pre-generated USER_POOL
+    _init_dest_pools()
+    for u in USER_POOL:
+        _assign_user_profile(u)
     main()
