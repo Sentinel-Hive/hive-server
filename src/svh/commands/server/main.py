@@ -35,7 +35,6 @@ def main_callback(
 ):
     """Server management commands."""
     if configure_firewall and ctx.invoked_subcommand is None:
-        # Redirect to firewall command
         ctx.invoke(firewall_cmd, config=None)
 
 @app.command(help="Start one or more API servers.")
@@ -57,11 +56,6 @@ def start(
         False, "-cF", help="Shortcut: use the built-in default config and configure firewall"
     ),
 ):
-    # combined short (-cF) implies both behaviors
-    if combined_cF:
-        use_default_config = True
-        configure_firewall = True
-
     # Determine config path
     if use_default_config:
         config_path = DEFAULT_CONFIG_PATH
@@ -127,7 +121,7 @@ def status(
     notify.firewall(f"Defaults: {result['details'].get('defaults')}")
 
     if result["ok"]:
-        notify.firewall("✓ Server firewall and SSH are configured correctly")
+        notify.firewall("Server firewall and SSH are configured correctly")
     else:
         notify.error("Issues detected with firewall or SSH configuration")
         if not result['details'].get('firewall_enabled'):

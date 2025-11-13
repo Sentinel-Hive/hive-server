@@ -76,7 +76,6 @@ def _start_service(config: dict, service: str, app_path: str, detach: bool = Fal
         host,
         "--port",
         str(port),
-        "--reload",
         "--log-level",
         "critical",
     ]
@@ -122,7 +121,28 @@ def _stop_service(config: dict, service: str):
     pid = int(pid_file.read_text())
     host, port = _resolve_config(config, service)
     try:
+        # Send SIGTERM to trigger graceful shutdown
         os.kill(pid, signal.SIGTERM)
+
+        # Wait for process to terminate gracefully (up to 30 seconds)
+        import time
+        for i in range(300):  # 300 * 0.1s = 30 seconds max
+            try:
+                # Check if process still exists (will raise ProcessLookupError if not)
+                os.kill(pid, 0)
+                time.sleep(0.1)
+            except ProcessLookupError:
+                # Process has terminated
+                break
+        else:
+            # Process didn't terminate after timeout - try force kill
+            # Note: This shouldn't happen in normal operation
+            try:
+                os.kill(pid, signal.SIGKILL)
+                time.sleep(0.5)
+            except ProcessLookupError:
+                # Already dead, that's fine
+                pass
     except ProcessLookupError:
         notify.error(f"No process found with PID {pid}.")
     finally:
@@ -130,7 +150,7 @@ def _stop_service(config: dict, service: str):
         try:
             firewall.close_port(port, "tcp")
         except Exception as e:
-            notify.error(f"Failed to close firewall port {port}: {e}")
+            notify.error(f"Failed to close port {port}:TCP. Error: {e}")
 
     notify.server(f"Stopped {service} API with PID {pid}.")
 
