@@ -25,6 +25,7 @@ from .alerts_schema import AlertIn, AlertOut  # if present
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    await websocket_hub.shutdown()
 
 
 app = FastAPI(title="SVH Client API", lifespan=lifespan)
