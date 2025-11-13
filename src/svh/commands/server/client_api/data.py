@@ -104,6 +104,7 @@ async def verify_admin_token(authorization: Optional[str] = Header(None)):
 async def store_data(data: Dict[str, Any], user: User = Depends(verify_admin_token)):
     """
     Store JSON data in the database (admin only).
+    Returns id, name, filename and hash on success.
     """
     if not data:
         raise HTTPException(
@@ -111,21 +112,25 @@ async def store_data(data: Dict[str, Any], user: User = Depends(verify_admin_tok
         )
 
     try:
-        # Pass JSON data to DB_Endpoint (DB API)
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{DB_API_URL}/data/store", json=data, timeout=10.0
             )
 
             if response.status_code != 201:
+                # attempt to surface DB API error detail when present
+                try:
+                    detail = response.json()
+                except Exception:
+                    detail = response.text
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="DB API failed to store data",
+                    detail="DB API failed to store data"
                 )
 
             result = response.json()
             return {"success": True, "id": result["id"]}
-
+            
     except httpx.RequestError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -258,6 +263,8 @@ async def get_data(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to communicate with DB API or storage: {str(e)}",
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

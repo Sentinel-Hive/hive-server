@@ -149,45 +149,15 @@ You can check firewall status with this command:
 ```bash
 svh server status
 ```
-
-You can configure the firewall with this command: 
+You can start the firewall with this commnad: 
 ```bash
 svh server -F
-# or
+
+or
+
 svh server firewall
 ```
-
-You can start the server and configure the firewall at the same time with this command:
+You can start the server and the firewall at the same time with this commnad:
 ```bash
-svh server start -c -F -d
+svh server start -cF -d
 ```
-
-**Troubleshooting Windows Firewall Issues:**
-- If firewall configuration fails, ensure you approve the UAC prompt when it appears
-- Alternatively, run your terminal (PowerShell/CMD) as Administrator before running svh commands
-- Check Windows Firewall settings to verify rules were created: `Windows Defender Firewall with Advanced Security`
-
-
-### Changing the ports (SSH)
-You can change the port to the SSH with this command:
-```bash
-svh server config edit
-```
-Then go to the SSH line and change the port to whatever.
-
-After run the firewall command to change the firewall settings:
-```bash
-svh server firewall
-```
-
-After verify with:
-```bash
-svh server status
-```
-
-To change the client and DB ports use:
-```bash
-svh server config edit
-```
-
-Then change the port. 

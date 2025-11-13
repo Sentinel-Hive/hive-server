@@ -1,0 +1,1 @@
+{"linux": {"enabled": true, "defaults": {"incoming": "deny", "outgoing": "allow"}}}
