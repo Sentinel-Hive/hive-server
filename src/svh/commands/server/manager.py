@@ -54,9 +54,11 @@ def manage_service(
 
         if detach:
             notify.server(f"{', '.join(selected)} server(s) started in detached mode.")
+            notify.show_ip()
             return
 
         notify.server(f"{', '.join(selected)} server(s) running. Press Ctrl+C to stop.")
+        notify.show_ip()
 
         def handle_exit(sig, frame):
             _handle_exit_graceful(selected, config)

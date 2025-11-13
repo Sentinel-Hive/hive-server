@@ -1,6 +1,7 @@
 import typer
 from datetime import datetime
 from pathlib import Path
+import socket
 
 # Determine project root relative to this file
 PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
@@ -18,6 +19,26 @@ DB_TAG = typer.style("[DATABASE]", fg=typer.colors.BLUE, bold=True)
 ERROR_TAG = typer.style("[ERROR]", fg=typer.colors.RED, bold=True)
 INFO_TAG = typer.style("[INFO]", fg=typer.colors.YELLOW, bold=True)
 WEBSOCKET_TAG = typer.style("[WEBSOCKET]", fg=typer.colors.CYAN, bold=True)
+
+_cached_ip = None
+
+
+def _get_local_ip() -> str:
+    """Get the local IP address of this machine."""
+    global _cached_ip
+    if _cached_ip is not None:
+        return _cached_ip
+    
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        _cached_ip = ip
+        return ip
+    except Exception:
+        _cached_ip = "127.0.0.1"
+        return _cached_ip
 
 
 def _write_log(tag: str, msg: str):
@@ -55,3 +76,9 @@ def info(msg: str):
 def websocket(msg: str):
     typer.echo(f"{WEBSOCKET_TAG} {msg}")
     _write_log("WEBSOCKET", msg)
+
+def show_ip():
+    """Display the server IP address."""
+    ip = _get_local_ip()
+    typer.echo(f"{SERVER_TAG} IP Address: {ip}")
+    _write_log("SERVER", f"IP Address: {ip}")
