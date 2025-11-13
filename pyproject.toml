@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
+    "websockets",
     "typer",
     "sqlalchemy",
     "alembic",
@@ -19,6 +20,7 @@ dependencies = [
     "python-multipart",
     "psutil",
     "httpx",
+    "pytz",
 ]
 
 [project.scripts]

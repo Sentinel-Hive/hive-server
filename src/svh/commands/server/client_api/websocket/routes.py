@@ -4,6 +4,7 @@ import traceback
 from datetime import datetime, timezone
 import uuid
 from typing import Optional, Any
+import asyncio
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
@@ -64,6 +65,28 @@ def _resolve_token(token_str: Optional[str]) -> tuple[Optional[str], bool]:
         user, _token = row
         return (user.user_id, bool(user.is_admin))
 
+async def _periodic_heartbeat(websocket: WebSocket, token: Optional[str], interval: int = 30):
+    """
+    Send periodic heartbeat messages to keep the WebSocket connection alive.
+    If token expires, close the connection.
+    """
+    while True:
+        await asyncio.sleep(interval)
+
+        # Validate token still active
+        user_id, is_admin = _resolve_token(token)
+        if not user_id:
+            notify.websocket("Token expired during heartbeat.")
+            await websocket.close(code=4401, reason="Token expired")
+            break
+
+        # Send heartbeat
+        try:
+            await websocket.send_json({"type": "heartbeat", "timestamp": _now_iso()})
+        except Exception as e:
+            notify.error(f"Heartbeat failed: {e!r}")
+            break
+
 
 @router.websocket("/websocket")
 async def websocket_endpoint(websocket: WebSocket):
@@ -72,6 +95,7 @@ async def websocket_endpoint(websocket: WebSocket):
     then routes client messages by their 'type'.
     """
     token = websocket.query_params.get("token")
+    heartbeat_task = None
     notify.websocket(f"connect attempt: token={'present' if token else 'missing'}")
 
     try:
@@ -87,6 +111,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
         # Optional: confirm to connecting client
         await websocket.send_json(_make_popup("Connected to websocket"))
+
+        # Start periodic heartbeat and token validation
+        heartbeat_task = asyncio.create_task(_periodic_heartbeat(websocket, token, interval=30))
+        notify.websocket("Heartbeat task started")
 
         while True:
             try:
@@ -111,6 +139,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket_hub.broadcast(_make_popup(f"[Broadcast] {text}"))
                     continue
 
+                # Handle heartbeat response from client
+                if isinstance(raw, dict) and raw.get("type") == "pong":
+                    # Client responded to heartbeat, no action needed
+                    continue
+
                 # Unknown message type
                 await websocket.send_json(
                     {"type": "error", "detail": "Unknown message type"}
@@ -128,5 +161,15 @@ async def websocket_endpoint(websocket: WebSocket):
         notify.error(f"top-level error: {e!r}")
         traceback.print_exc()
     finally:
+        # Clean up heartbeat task
+        if heartbeat_task:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                notify.websocket("Heartbeat task cancelled")
+            except Exception as e:
+                notify.error(f"Error during heartbeat task cancellation: {e!r}")
+
         websocket_hub.disconnect(websocket)
         notify.websocket("connection closed")
