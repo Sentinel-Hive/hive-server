@@ -65,6 +65,7 @@ def _resolve_token(token_str: Optional[str]) -> tuple[Optional[str], bool]:
         user, _token = row
         return (user.user_id, bool(user.is_admin))
 
+
 async def _periodic_heartbeat(websocket: WebSocket, token: Optional[str], interval: int = 30):
     """
     Send periodic heartbeat messages to keep the WebSocket connection alive.
@@ -96,7 +97,8 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     token = websocket.query_params.get("token")
     heartbeat_task = None
-    notify.websocket(f"connect attempt: token={'present' if token else 'missing'}")
+    notify.websocket(
+        f"connect attempt: token={'present' if token else 'missing'}")
 
     try:
         # Validate token *before* accepting
@@ -113,7 +115,8 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_json(_make_popup("Connected to websocket"))
 
         # Start periodic heartbeat and token validation
-        heartbeat_task = asyncio.create_task(_periodic_heartbeat(websocket, token, interval=30))
+        heartbeat_task = asyncio.create_task(
+            _periodic_heartbeat(websocket, token, interval=30))
         notify.websocket("Heartbeat task started")
 
         while True:
@@ -130,7 +133,20 @@ async def websocket_endpoint(websocket: WebSocket):
                         description=raw.get("description"),
                         tags=raw.get("tags") or [],
                     )
-                    await websocket_hub.broadcast(alert)
+
+                    # Support both boolean "admin_only" and string "audience"
+                    admin_only = bool(raw.get("admin_only", False))
+
+                    audience = (raw.get("audience")
+                                or "admins" if admin_only else "all").lower()
+                    if audience not in {"all", "admins"}:
+                        audience = "all"
+
+                    if audience == "admins":
+                        await websocket_hub.broadcast_admins(alert)
+                    else:
+                        await websocket_hub.broadcast(alert)
+
                     continue
 
                 # Developer popup broadcast
@@ -169,7 +185,8 @@ async def websocket_endpoint(websocket: WebSocket):
             except asyncio.CancelledError:
                 notify.websocket("Heartbeat task cancelled")
             except Exception as e:
-                notify.error(f"Error during heartbeat task cancellation: {e!r}")
+                notify.error(
+                    f"Error during heartbeat task cancellation: {e!r}")
 
         websocket_hub.disconnect(websocket)
         notify.websocket("connection closed")
