@@ -273,6 +273,21 @@ DEST_POOL_SUBNETS = {
 }
 DEST_POOLS: dict[str, list[str]] = {}
 
+# Service identities for responses (so responses don't look like random end-users)
+SERVICE_USER_BY_KEY = {
+    "web": "web-service",
+    "dns": "dns-service",
+    "db": "db-service",
+    "mail": "mail-server",
+    "ntp": "ntp-service",
+    "ssh": "ssh-daemon-server",
+    "ftp": "ftp-service",
+    "sftp": "sftp-service",
+    "ids": "ids-service",
+    "system": "system-service",
+    "default": "unknown-service",
+}
+
 
 def _choose_region() -> str:
     names = [n for n, _ in REGION_WEIGHTS]
@@ -359,6 +374,9 @@ def pick_dest_ip(user: str, app: str) -> str:
     if random.random() < 0.8 and favs:
         return random.choice(favs)
     return random.choice(pool)
+
+def service_user_for_app(app: str) -> str:
+    return SERVICE_USER_BY_KEY.get(_dest_key_for_app(app), SERVICE_USER_BY_KEY["default"])
 PORTS = [22, 80, 443, 21, 3389, 3306, 5432, 53, 123, 8080, 8443, 2022, 5060]
 
 def rand_ip(publicish=True):
@@ -651,16 +669,10 @@ def make_record_for_app(i, app_override=None):
         dest_port = random.choice([21, 2022])
         src_port = random.randint(1024, 65535)
     elif "dns" in app.lower():
-        if random.random() < 0.6:
-            # incoming query
-            dest_port = 53
-            src_port = random.randint(1024, 65535)
-            extras["dnsDirection"] = "query"
-        else:
-            # outgoing response
-            src_port = 53
-            dest_port = random.randint(1024, 65535)
-            extras["dnsDirection"] = "response"
+        # Model the request from user -> DNS server as the primary event
+        dest_port = 53
+        src_port = random.randint(1024, 65535)
+        extras["dnsDirection"] = "query"
     elif "mail" in app.lower():
         dest_port = random.choice([25, 465, 110, 143, 995, 993])
         src_port = random.randint(1024, 65535)
@@ -912,6 +924,114 @@ def make_record_for_app(i, app_override=None):
         if field in extras:
             result[field] = extras[field]
 
+    # Carry over DNS direction if set
+    if "dnsDirection" in extras:
+        result["dns_direction"] = extras["dnsDirection"]
+
+    # Optionally emit a response event to form a flow (HTTP/DNS)
+    def _emit_pair_http(res: dict) -> list[dict]:
+        flow_id = str(uuid.uuid4())
+        res = dict(res)
+        res["flow_id"] = flow_id
+        res["flow_seq"] = 1
+        res["direction"] = "request"
+        # response mirrors ports and swap IPs
+        resp = dict(res)
+        resp["id"] = f"{res['id']}-r"
+        resp["flow_seq"] = 2
+        resp["direction"] = "response"
+        resp["src_ip"], resp["dest_ip"] = res["dest_ip"], res["src_ip"]
+        resp["src_port"], resp["dest_port"] = res["dest_port"], res["src_port"]
+        # mark response event type/message
+        code = res.get("http_status_code")
+        if code is None:
+            code = extras.get("statusCode", 200) if isinstance(extras, dict) else 200
+        resp["evt_type"] = "http.response"
+        resp["message"] = f"Response {code}"
+        # service identity for response
+        resp["user"] = service_user_for_app(app)
+        # realistic timing: small positive latency
+        try:
+            base = datetime.fromisoformat(res["timestamp"])  # already UTC-aware
+            ms = random.randint(3, 1500)
+            resp["timestamp"] = (base + timedelta(milliseconds=ms)).isoformat()
+            resp["latency_ms"] = ms
+        except Exception:
+            pass
+        return [res, resp]
+
+    def _emit_pair_dns(res: dict) -> list[dict]:
+        flow_id = str(uuid.uuid4())
+        res = dict(res)
+        res["flow_id"] = flow_id
+        res["flow_seq"] = 1
+        res["direction"] = "request"
+        res["dns_direction"] = "query"
+        # response from DNS server back to user
+        resp = dict(res)
+        resp["id"] = f"{res['id']}-r"
+        resp["flow_seq"] = 2
+        resp["direction"] = "response"
+        resp["dns_direction"] = "response"
+        resp["src_ip"], resp["dest_ip"] = res["dest_ip"], res["src_ip"]
+        resp["src_port"], resp["dest_port"] = 53, res["src_port"]
+        # keep evt type as dns_query
+        resp["user"] = service_user_for_app(app)
+        # realistic timing
+        try:
+            base = datetime.fromisoformat(res["timestamp"])  # UTC-aware
+            ms = random.randint(2, 800)
+            resp["timestamp"] = (base + timedelta(milliseconds=ms)).isoformat()
+            resp["latency_ms"] = ms
+        except Exception:
+            pass
+        return [res, resp]
+
+    def _emit_pair_generic(res: dict, proto_label: str) -> list[dict]:
+        flow_id = str(uuid.uuid4())
+        res = dict(res)
+        res["flow_id"] = flow_id
+        res["flow_seq"] = 1
+        res["direction"] = "request"
+        resp = dict(res)
+        resp["id"] = f"{res['id']}-r"
+        resp["flow_seq"] = 2
+        resp["direction"] = "response"
+        resp["src_ip"], resp["dest_ip"] = res["dest_ip"], res["src_ip"]
+        resp["src_port"], resp["dest_port"] = res["dest_port"], res["src_port"]
+        resp["evt_type"] = f"{proto_label}.response"
+        resp["message"] = f"{proto_label.upper()} response"
+        resp["user"] = service_user_for_app(app)
+        # realistic timing
+        try:
+            base = datetime.fromisoformat(res["timestamp"])  # UTC-aware
+            # generic services tend to be quick but can vary
+            ms = random.randint(5, 1200)
+            resp["timestamp"] = (base + timedelta(milliseconds=ms)).isoformat()
+            resp["latency_ms"] = ms
+        except Exception:
+            pass
+        return [res, resp]
+
+    low_app = app.lower()
+    try_emit_pair = random.random() < 0.65
+    if try_emit_pair and ("http" in low_app or "web" in low_app):
+        return _emit_pair_http(result)
+    if try_emit_pair and ("dns" in low_app):
+        return _emit_pair_dns(result)
+    if try_emit_pair and ("db" in low_app):
+        return _emit_pair_generic(result, "db")
+    if try_emit_pair and ("mail" in low_app or "smtp" in low_app):
+        return _emit_pair_generic(result, "mail")
+    if try_emit_pair and ("ntp" in low_app):
+        return _emit_pair_generic(result, "ntp")
+    if try_emit_pair and (low_app.startswith("ssh")):
+        return _emit_pair_generic(result, "ssh")
+    if try_emit_pair and ("sftp" in low_app):
+        return _emit_pair_generic(result, "sftp")
+    if try_emit_pair and ("ftp" in low_app and "sftp" not in low_app):
+        return _emit_pair_generic(result, "ftp")
+
     return result
 
 def main():
@@ -946,7 +1066,11 @@ def main():
         for i in range(1, COUNT+1):
             app_choice = random.choice(selected_apps)
             rec = make_record_for_app(i, app_choice)
-            target_print(json.dumps(rec, ensure_ascii=False))
+            if isinstance(rec, list):
+                for r in rec:
+                    target_print(json.dumps(r, ensure_ascii=False))
+            else:
+                target_print(json.dumps(rec, ensure_ascii=False))
         if outfh:
             outfh.close()
             path_msg = args.out if args.out else output_path
@@ -960,7 +1084,11 @@ def main():
             with open(path, "w", encoding="utf-8") as fh:
                 for i in range(1, COUNT+1):
                     rec = make_record_for_app(i, app)
-                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    if isinstance(rec, list):
+                        for r in rec:
+                            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+                    else:
+                        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
             print(f"Wrote {COUNT} records for '{app}' -> {path}", file=sys.stderr)
 
 if __name__ == "__main__":
